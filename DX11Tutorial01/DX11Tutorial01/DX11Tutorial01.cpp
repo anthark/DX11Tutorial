@@ -154,6 +154,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
+    case WM_SIZE:
+       if (g_pRenderer != NULL)
+       {
+          RECT rc;
+          GetClientRect(hWnd, &rc);
+          g_pRenderer->Resize(rc.right - rc.left, rc.bottom - rc.top);
+       }
+       break;
     case WM_COMMAND:
         {
             int wmId = LOWORD(wParam);
