@@ -39,6 +39,8 @@ Renderer::Renderer()
 	, m_pVertexShader(NULL)
 	, m_pPixelShader(NULL)
 	, m_pInputLayout(NULL)
+	, m_pModelBuffer(NULL)
+	, m_pRasterizerState(NULL)
 	, m_usec(0)
 {
 }
@@ -312,11 +314,30 @@ HRESULT Renderer::CreateScene()
 		result = m_pDevice->CreateBuffer(&cbDesc, NULL, &m_pModelBuffer);
 	}
 
+	// Create rasterizer state
+	if (SUCCEEDED(result))
+	{
+		D3D11_RASTERIZER_DESC rasterizerDesc;
+		rasterizerDesc.FillMode = D3D11_FILL_SOLID;
+		rasterizerDesc.CullMode = D3D11_CULL_NONE;
+		rasterizerDesc.FrontCounterClockwise = FALSE;
+		rasterizerDesc.DepthBias = 0;
+		rasterizerDesc.SlopeScaledDepthBias = 0.0f;
+		rasterizerDesc.DepthBiasClamp = 0.0f;
+		rasterizerDesc.DepthClipEnable = TRUE;
+		rasterizerDesc.ScissorEnable = FALSE;
+		rasterizerDesc.MultisampleEnable = FALSE;
+		rasterizerDesc.AntialiasedLineEnable = FALSE;
+
+		result = m_pDevice->CreateRasterizerState(&rasterizerDesc, &m_pRasterizerState);
+	}
+
 	return result;
 }
 
 void Renderer::DestroyScene()
 {
+	SAFE_RELEASE(m_pRasterizerState);
 	SAFE_RELEASE(m_pModelBuffer);
 
 	SAFE_RELEASE(m_pInputLayout);
@@ -344,6 +365,8 @@ void Renderer::RenderScene()
 
 	ID3D11Buffer* constBuffers[] = { m_pModelBuffer };
 	m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
+
+	m_pContext->RSSetState(m_pRasterizerState);
 
 	m_pContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	m_pContext->DrawIndexed(3, 0, 0);

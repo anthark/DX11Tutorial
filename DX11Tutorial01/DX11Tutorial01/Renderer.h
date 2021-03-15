@@ -41,6 +41,8 @@ private:
 
 	ID3D11Buffer* m_pModelBuffer;
 
+	ID3D11RasterizerState* m_pRasterizerState;
+
 	UINT m_width;
 	UINT m_height;
 
