@@ -4,6 +4,8 @@
 #include "framework.h"
 #include "DX11Tutorial01.h"
 
+#include "Renderer.h"
+
 #define MAX_LOADSTRING 100
 
 // Global Variables:
@@ -16,6 +18,8 @@ ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
+
+Renderer* g_pRenderer = NULL;
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
@@ -38,6 +42,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         return FALSE;
     }
 
+    g_pRenderer = new Renderer();
+    if (!g_pRenderer->Init())
+    {
+       return FALSE;
+    }
+
     HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_DX11TUTORIAL01));
 
     MSG msg;
@@ -51,6 +61,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             DispatchMessage(&msg);
         }
     }
+
+    g_pRenderer->Term();
+    delete g_pRenderer;
+    g_pRenderer = NULL;
 
     return (int) msg.wParam;
 }

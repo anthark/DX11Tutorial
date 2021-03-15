@@ -141,11 +141,13 @@
   <ItemGroup>
     <ClInclude Include="DX11Tutorial01.h" />
     <ClInclude Include="framework.h" />
+    <ClInclude Include="Renderer.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DX11Tutorial01.cpp" />
+    <ClCompile Include="Renderer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="DX11Tutorial01.rc" />
