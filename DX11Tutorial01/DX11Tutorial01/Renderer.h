@@ -18,12 +18,25 @@ public:
 private:
 	HRESULT CreateBackBufferRTV();
 
+	HRESULT CreateScene();
+	void DestroyScene();
+	void RenderScene();
+
+	ID3D11VertexShader* CreateVertexShader(LPCTSTR shaderSource, ID3DBlob** ppBlob);
+	ID3D11PixelShader*  CreatePixelShader(LPCTSTR shaderSource);
+
 private:
 	ID3D11Device* m_pDevice;
 	ID3D11DeviceContext* m_pContext;
 
 	IDXGISwapChain* m_pSwapChain;
 	ID3D11RenderTargetView* m_pBackBufferRTV;
+
+	ID3D11Buffer* m_pVertexBuffer;
+	ID3D11Buffer* m_pIndexBuffer;
+	ID3D11VertexShader* m_pVertexShader;
+	ID3D11PixelShader* m_pPixelShader;
+	ID3D11InputLayout* m_pInputLayout;
 
 	UINT m_width;
 	UINT m_height;
