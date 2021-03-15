@@ -53,13 +53,23 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     MSG msg;
 
     // Main message loop:
-    while (GetMessage(&msg, nullptr, 0, 0))
+    bool exit = false;
+    while (!exit)
     {
-        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
-        {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
+       if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+       {
+          if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
+          {
+             TranslateMessage(&msg);
+             DispatchMessage(&msg);
+          }
+       }
+       if (msg.message == WM_QUIT)
+       {
+          exit = true;
+       }
+
+       g_pRenderer->Render();
     }
 
     g_pRenderer->Term();
