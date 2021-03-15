@@ -7,6 +7,8 @@
 #include <d3dcompiler.h>
 
 #include <chrono>
+#define _USE_MATH_DEFINES
+#include <math.h>
 
 using namespace DirectX;
 
@@ -178,8 +180,20 @@ bool Renderer::Update()
 
 	m_usec = usec;
 
+
+	XMMATRIX view = XMMatrixInverse(NULL, XMMatrixTranslation(0, 0, -10.0f));
+
 	ModelBuffer cb;
-	cb.modelMatrix = XMMatrixTranspose(XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec) * XMMatrixTranslation(0, 0, 0.5f));
+	//XMMATRIX trans = XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec) * XMMatrixTranslation(0, 0, 0.5f);
+	XMMATRIX trans = XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec) * view;
+
+	static const float nearPlane = 0.001f;
+	static const float farPlane = 100.0f;
+	static const float fov = (float)M_PI * 2.0 / 3.0;
+
+	float width = nearPlane / tanf(fov / 2.0);
+	float height = ((float)m_height / m_width) * width;
+	cb.modelMatrix = XMMatrixTranspose(trans * XMMatrixPerspectiveLH(width, height, nearPlane, farPlane));
 
 	m_pContext->UpdateSubresource(m_pModelBuffer, 0, NULL, &cb, 0, 0);
 
