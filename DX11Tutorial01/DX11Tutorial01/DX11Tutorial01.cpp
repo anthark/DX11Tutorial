@@ -19,6 +19,7 @@ BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
+HWND g_hWnd = NULL;
 Renderer* g_pRenderer = NULL;
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
@@ -43,7 +44,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     }
 
     g_pRenderer = new Renderer();
-    if (!g_pRenderer->Init())
+    if (!g_pRenderer->Init(g_hWnd))
     {
        return FALSE;
     }
@@ -75,6 +76,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     g_pRenderer->Term();
     delete g_pRenderer;
     g_pRenderer = NULL;
+
+    g_hWnd = NULL;
 
     return (int) msg.wParam;
 }
@@ -131,6 +134,8 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
+
+   g_hWnd = hWnd;
 
    return TRUE;
 }
