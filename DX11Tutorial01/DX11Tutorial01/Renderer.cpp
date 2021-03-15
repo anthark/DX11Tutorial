@@ -47,6 +47,7 @@ Renderer::Renderer()
 	, m_pPixelShader(NULL)
 	, m_pInputLayout(NULL)
 	, m_pModelBuffer(NULL)
+	, m_pModelBuffer2(NULL)
 	, m_pSceneBuffer(NULL)
 	, m_pRasterizerState(NULL)
 	, m_usec(0)
@@ -186,11 +187,12 @@ bool Renderer::Update()
 
 	m_usec = usec;
 
-
 	ModelBuffer cb;
 	cb.modelMatrix = XMMatrixTranspose(XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec));
-
 	m_pContext->UpdateSubresource(m_pModelBuffer, 0, NULL, &cb, 0, 0);
+
+	cb.modelMatrix = XMMatrixTranspose(XMMatrixTranslation(1, 0, 0));
+	m_pContext->UpdateSubresource(m_pModelBuffer2, 0, NULL, &cb, 0, 0);
 
 	// Setup scene buffer
 	SceneBuffer scb;
@@ -336,6 +338,10 @@ HRESULT Renderer::CreateScene()
 		cbDesc.StructureByteStride = 0;
 
 		result = m_pDevice->CreateBuffer(&cbDesc, NULL, &m_pModelBuffer);
+		if (SUCCEEDED(result))
+		{
+			result = m_pDevice->CreateBuffer(&cbDesc, NULL, &m_pModelBuffer2);
+		}
 	}
 
 	// Create scene constant buffer
@@ -376,6 +382,7 @@ HRESULT Renderer::CreateScene()
 void Renderer::DestroyScene()
 {
 	SAFE_RELEASE(m_pRasterizerState);
+	SAFE_RELEASE(m_pModelBuffer2);
 	SAFE_RELEASE(m_pModelBuffer);
 	SAFE_RELEASE(m_pSceneBuffer);
 
@@ -407,13 +414,24 @@ void Renderer::RenderScene()
 		m_pContext->VSSetConstantBuffers(1, 1, constBuffers);
 	}
 
-	ID3D11Buffer* constBuffers[] = { m_pModelBuffer };
-	m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
-
 	m_pContext->RSSetState(m_pRasterizerState);
-
 	m_pContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	m_pContext->DrawIndexed(3, 0, 0);
+
+	// First triangle
+	{
+		ID3D11Buffer* constBuffers[] = { m_pModelBuffer };
+		m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
+
+		m_pContext->DrawIndexed(3, 0, 0);
+	}
+
+	// Second triangle
+	{
+		ID3D11Buffer* constBuffers[] = { m_pModelBuffer2 };
+		m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
+
+		m_pContext->DrawIndexed(3, 0, 0);
+	}
 }
 
 ID3D11VertexShader* Renderer::CreateVertexShader(LPCTSTR shaderSource, ID3DBlob** ppBlob)
