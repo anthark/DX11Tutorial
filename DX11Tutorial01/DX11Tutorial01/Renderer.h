@@ -13,6 +13,7 @@ public:
 
 	void Resize(UINT width, UINT height);
 
+	bool Update();
 	bool Render();
 
 private:
@@ -38,6 +39,10 @@ private:
 	ID3D11PixelShader* m_pPixelShader;
 	ID3D11InputLayout* m_pInputLayout;
 
+	ID3D11Buffer* m_pModelBuffer;
+
 	UINT m_width;
 	UINT m_height;
+
+	size_t m_usec;
 };

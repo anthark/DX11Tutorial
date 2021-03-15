@@ -6,12 +6,19 @@
 #include <DirectXMath.h>
 #include <d3dcompiler.h>
 
+#include <chrono>
+
 using namespace DirectX;
 
 struct ColorVertex
 {
 	XMVECTORF32 pos;
 	XMVECTORF32 color;
+};
+
+struct ModelBuffer
+{
+	XMMATRIX modelMatrix;
 };
 
 #define SAFE_RELEASE(p) \
@@ -32,6 +39,7 @@ Renderer::Renderer()
 	, m_pVertexShader(NULL)
 	, m_pPixelShader(NULL)
 	, m_pInputLayout(NULL)
+	, m_usec(0)
 {
 }
 
@@ -155,6 +163,27 @@ void Renderer::Resize(UINT width, UINT height)
 	}
 }
 
+bool Renderer::Update()
+{
+	size_t usec = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+	if (m_usec == 0)
+	{
+		m_usec = usec; // Initial update
+	}
+
+	double deltaSec = (usec - m_usec) / 1000000.0;
+	double elapsedSec = usec / 1000000.0;
+
+	m_usec = usec;
+
+	ModelBuffer cb;
+	cb.modelMatrix = XMMatrixTranspose(XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec) * XMMatrixTranslation(0, 0, 0.5f));
+
+	m_pContext->UpdateSubresource(m_pModelBuffer, 0, NULL, &cb, 0, 0);
+
+	return true;
+}
+
 bool Renderer::Render()
 {
 	m_pContext->ClearState();
@@ -269,11 +298,27 @@ HRESULT Renderer::CreateScene()
 	}
 	SAFE_RELEASE(pBlob);
 
+	// Create model constant buffer
+	if (SUCCEEDED(result))
+	{
+		D3D11_BUFFER_DESC cbDesc = { 0 };
+		cbDesc.ByteWidth = sizeof(ModelBuffer);
+		cbDesc.Usage = D3D11_USAGE_DEFAULT;
+		cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+		cbDesc.CPUAccessFlags = 0;
+		cbDesc.MiscFlags = 0;
+		cbDesc.StructureByteStride = 0;
+
+		result = m_pDevice->CreateBuffer(&cbDesc, NULL, &m_pModelBuffer);
+	}
+
 	return result;
 }
 
 void Renderer::DestroyScene()
 {
+	SAFE_RELEASE(m_pModelBuffer);
+
 	SAFE_RELEASE(m_pInputLayout);
 
 	SAFE_RELEASE(m_pPixelShader);
@@ -296,6 +341,9 @@ void Renderer::RenderScene()
 
 	m_pContext->VSSetShader(m_pVertexShader, NULL, 0);
 	m_pContext->PSSetShader(m_pPixelShader, NULL, 0);
+
+	ID3D11Buffer* constBuffers[] = { m_pModelBuffer };
+	m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
 
 	m_pContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	m_pContext->DrawIndexed(3, 0, 0);

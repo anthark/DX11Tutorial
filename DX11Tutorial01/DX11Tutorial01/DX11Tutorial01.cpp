@@ -70,6 +70,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
           exit = true;
        }
 
+       g_pRenderer->Update();
        g_pRenderer->Render();
     }
 
