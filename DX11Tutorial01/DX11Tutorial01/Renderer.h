@@ -40,6 +40,7 @@ private:
 	ID3D11InputLayout* m_pInputLayout;
 
 	ID3D11Buffer* m_pModelBuffer;
+	ID3D11Buffer* m_pSceneBuffer;
 
 	ID3D11RasterizerState* m_pRasterizerState;
 

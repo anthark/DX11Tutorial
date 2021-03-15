@@ -3,6 +3,11 @@ cbuffer ModelBuffer : register(b0)
     float4x4 modelMatrix;
 }
 
+cbuffer SceneBuffer : register(b1)
+{
+    float4x4 VP;
+}
+
 struct VSInput
 {
 	float4 pos : POSITION;
@@ -18,7 +23,7 @@ struct VSOutput
 VSOutput VS(in VSInput vertex)
 {
 	VSOutput output;
-	output.pos = mul(vertex.pos, modelMatrix);
+	output.pos = mul(mul(vertex.pos, modelMatrix), VP);
 	output.color = vertex.color;
 	
 	return output;

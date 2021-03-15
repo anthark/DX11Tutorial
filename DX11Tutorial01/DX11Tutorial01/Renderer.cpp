@@ -23,6 +23,11 @@ struct ModelBuffer
 	XMMATRIX modelMatrix;
 };
 
+struct SceneBuffer
+{
+	XMMATRIX VP;
+};
+
 #define SAFE_RELEASE(p) \
 if (p != NULL) { \
 	p->Release(); \
@@ -42,6 +47,7 @@ Renderer::Renderer()
 	, m_pPixelShader(NULL)
 	, m_pInputLayout(NULL)
 	, m_pModelBuffer(NULL)
+	, m_pSceneBuffer(NULL)
 	, m_pRasterizerState(NULL)
 	, m_usec(0)
 {
@@ -181,21 +187,25 @@ bool Renderer::Update()
 	m_usec = usec;
 
 
-	XMMATRIX view = XMMatrixInverse(NULL, XMMatrixTranslation(0, 0, -10.0f));
-
 	ModelBuffer cb;
-	//XMMATRIX trans = XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec) * XMMatrixTranslation(0, 0, 0.5f);
-	XMMATRIX trans = XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec) * view;
+	cb.modelMatrix = XMMatrixTranspose(XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec));
+
+	m_pContext->UpdateSubresource(m_pModelBuffer, 0, NULL, &cb, 0, 0);
+
+	// Setup scene buffer
+	SceneBuffer scb;
 
 	static const float nearPlane = 0.001f;
 	static const float farPlane = 100.0f;
 	static const float fov = (float)M_PI * 2.0 / 3.0;
 
+	XMMATRIX view = XMMatrixInverse(NULL, XMMatrixTranslation(0, 0, -10.0f));
+
 	float width = nearPlane / tanf(fov / 2.0);
 	float height = ((float)m_height / m_width) * width;
-	cb.modelMatrix = XMMatrixTranspose(trans * XMMatrixPerspectiveLH(width, height, nearPlane, farPlane));
+	scb.VP = XMMatrixTranspose(view * XMMatrixPerspectiveLH(width, height, nearPlane, farPlane));
 
-	m_pContext->UpdateSubresource(m_pModelBuffer, 0, NULL, &cb, 0, 0);
+	m_pContext->UpdateSubresource(m_pSceneBuffer, 0, NULL, &scb, 0, 0);
 
 	return true;
 }
@@ -328,6 +338,20 @@ HRESULT Renderer::CreateScene()
 		result = m_pDevice->CreateBuffer(&cbDesc, NULL, &m_pModelBuffer);
 	}
 
+	// Create scene constant buffer
+	if (SUCCEEDED(result))
+	{
+		D3D11_BUFFER_DESC cbDesc = { 0 };
+		cbDesc.ByteWidth = sizeof(SceneBuffer);
+		cbDesc.Usage = D3D11_USAGE_DEFAULT;
+		cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+		cbDesc.CPUAccessFlags = 0;
+		cbDesc.MiscFlags = 0;
+		cbDesc.StructureByteStride = 0;
+
+		result = m_pDevice->CreateBuffer(&cbDesc, NULL, &m_pSceneBuffer);
+	}
+
 	// Create rasterizer state
 	if (SUCCEEDED(result))
 	{
@@ -353,6 +377,7 @@ void Renderer::DestroyScene()
 {
 	SAFE_RELEASE(m_pRasterizerState);
 	SAFE_RELEASE(m_pModelBuffer);
+	SAFE_RELEASE(m_pSceneBuffer);
 
 	SAFE_RELEASE(m_pInputLayout);
 
@@ -376,6 +401,11 @@ void Renderer::RenderScene()
 
 	m_pContext->VSSetShader(m_pVertexShader, NULL, 0);
 	m_pContext->PSSetShader(m_pPixelShader, NULL, 0);
+
+	{
+		ID3D11Buffer* constBuffers[] = { m_pSceneBuffer };
+		m_pContext->VSSetConstantBuffers(1, 1, constBuffers);
+	}
 
 	ID3D11Buffer* constBuffers[] = { m_pModelBuffer };
 	m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
