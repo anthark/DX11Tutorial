@@ -16,6 +16,8 @@ public:
 	bool Update();
 	bool Render();
 
+	void MouseMove(int dx, int dy);
+
 private:
 	HRESULT CreateBackBufferRTV();
 
@@ -49,4 +51,7 @@ private:
 	UINT m_height;
 
 	size_t m_usec;
+
+	float m_lon;
+	float m_lat;
 };

@@ -6,6 +6,8 @@
 
 #include "Renderer.h"
 
+#include <windowsx.h>
+
 #define MAX_LOADSTRING 100
 
 // Global Variables:
@@ -21,6 +23,10 @@ INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
 HWND g_hWnd = NULL;
 Renderer* g_pRenderer = NULL;
+
+bool g_mousePress = false;
+int g_mousePrevX = 0;
+int g_mousePrevY = 0;
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
@@ -180,6 +186,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
         }
         break;
+
+    case WM_RBUTTONDOWN:
+       g_mousePress = true;
+       g_mousePrevX = GET_X_LPARAM(lParam);
+       g_mousePrevY = GET_Y_LPARAM(lParam);
+       break;
+
+    case WM_RBUTTONUP:
+       g_mousePress = false;
+       break;
+
+    case WM_MOUSEMOVE:
+       if (g_mousePress)
+       {
+          int x = GET_X_LPARAM(lParam);
+          int y = GET_Y_LPARAM(lParam);
+
+          g_pRenderer->MouseMove(x - g_mousePrevX, y - g_mousePrevY);
+
+          g_mousePrevX = x;
+          g_mousePrevY = y;
+       }
+       break;
+
     case WM_PAINT:
         {
             PAINTSTRUCT ps;
