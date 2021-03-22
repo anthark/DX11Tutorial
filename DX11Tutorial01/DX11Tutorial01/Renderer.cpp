@@ -59,6 +59,7 @@ Renderer::Renderer()
 	, m_usec(0)
 	, m_lon(0.0f)
 	, m_lat(0.0f)
+	, m_dist(10.0f)
 {
 }
 
@@ -227,7 +228,7 @@ bool Renderer::Update()
 	static const float farPlane = 100.0f;
 	static const float fov = (float)M_PI * 2.0 / 3.0;
 
-	XMMATRIX view = XMMatrixInverse(NULL, XMMatrixTranslation(0, 0, -10.0f) * XMMatrixRotationAxis({ 1,0,0 }, m_lat) * XMMatrixRotationAxis({ 0,1,0 }, m_lon));
+	XMMATRIX view = XMMatrixInverse(NULL, XMMatrixTranslation(0, 0, -m_dist) * XMMatrixRotationAxis({ 1,0,0 }, m_lat) * XMMatrixRotationAxis({ 0,1,0 }, m_lon));
 
 	float width = nearPlane / tanf(fov / 2.0);
 	float height = ((float)m_height / m_width) * width;
@@ -274,6 +275,15 @@ void Renderer::MouseMove(int dx, int dy)
 	if (m_lat >= (float)M_PI / 2)
 	{
 		m_lat = (float)M_PI / 2;
+	}
+}
+
+void Renderer::MouseWheel(int dz)
+{
+	m_dist += dz / 100.0f;
+	if (m_dist < 0)
+	{
+		m_dist = 0;
 	}
 }
 

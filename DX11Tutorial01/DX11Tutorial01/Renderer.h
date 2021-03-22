@@ -17,6 +17,7 @@ public:
 	bool Render();
 
 	void MouseMove(int dx, int dy);
+	void MouseWheel(int dz);
 
 private:
 	HRESULT SetupBackBuffer();
@@ -62,4 +63,5 @@ private:
 
 	float m_lon;
 	float m_lat;
+	float m_dist;
 };
