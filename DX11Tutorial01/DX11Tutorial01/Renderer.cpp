@@ -13,6 +13,8 @@
 
 using namespace DirectX;
 
+static const UINT IndicesCount = 36;
+
 struct TextureVertex
 {
 	XMVECTORF32 pos;
@@ -212,16 +214,17 @@ bool Renderer::Update()
 		m_usec = usec; // Initial update
 	}
 
-	double deltaSec = (usec - m_usec) / 1000000.0;
-	double elapsedSec = usec / 1000000.0;
-
-	m_usec = usec;
+	double elapsedSec = (usec - m_usec) / 1000000.0;
 
 	ModelBuffer cb;
 	cb.modelMatrix = XMMatrixTranspose(XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec));
 	m_pContext->UpdateSubresource(m_pModelBuffer, 0, NULL, &cb, 0, 0);
 
-	cb.modelMatrix = XMMatrixTranspose(XMMatrixTranslation(1, 0, 0));
+	char buffer[100];
+	sprintf_s(buffer, "%f\n", elapsedSec);
+	OutputDebugStringA(buffer);
+
+	cb.modelMatrix = XMMatrixTranspose(XMMatrixTranslation(1.5f, 0, 0));
 	m_pContext->UpdateSubresource(m_pModelBuffer2, 0, NULL, &cb, 0, 0);
 
 	// Setup scene buffer
@@ -329,19 +332,61 @@ HRESULT Renderer::SetupBackBuffer()
 
 HRESULT Renderer::CreateScene()
 {
-	static const TextureVertex Vertices[3] = {
+	// Textured cube
+	static const TextureVertex Vertices[24] = {
+		// Bottom face
+		{{-0.5, -0.5,  0.5, 1}, {0,1}},
+		{{ 0.5, -0.5,  0.5, 1}, {1,1}},
+		{{ 0.5, -0.5, -0.5, 1}, {1,0}},
+		{{-0.5, -0.5, -0.5, 1}, {0,0}},
+		// Top face
+		{{-0.5,  0.5, -0.5, 1}, {0,1}},
+		{{ 0.5,  0.5, -0.5, 1}, {1,1}},
+		{{ 0.5,  0.5,  0.5, 1}, {1,0}},
+		{{-0.5,  0.5,  0.5, 1}, {0,0}},
+		// Front face
+		{{ 0.5, -0.5, -0.5, 1}, {0,1}},
+		{{ 0.5, -0.5,  0.5, 1}, {1,1}},
+		{{ 0.5,  0.5,  0.5, 1}, {1,0}},
+		{{ 0.5,  0.5, -0.5, 1}, {0,0}},
+		// Back face
+		{{-0.5, -0.5,  0.5, 1}, {0,1}},
+		{{-0.5, -0.5, -0.5, 1}, {1,1}},
+		{{-0.5,  0.5, -0.5, 1}, {1,0}},
+		{{-0.5,  0.5,  0.5, 1}, {0,0}},
+		// Left face
+		{{ 0.5, -0.5,  0.5, 1}, {0,1}},
+		{{-0.5, -0.5,  0.5, 1}, {1,1}},
+		{{-0.5,  0.5,  0.5, 1}, {1,0}},
+		{{ 0.5,  0.5,  0.5, 1}, {0,0}},
+		// Right face
+		{{-0.5, -0.5, -0.5, 1}, {0,1}},
+		{{ 0.5, -0.5, -0.5, 1}, {1,1}},
+		{{ 0.5,  0.5, -0.5, 1}, {1,0}},
+		{{-0.5,  0.5, -0.5, 1}, {0,0}},
+	};
+	static const UINT16 Indices[IndicesCount] = {
+		0, 2, 1, 0, 3, 2,
+		4, 6, 5, 4, 7, 6,
+		8, 10, 9, 8, 11, 10,
+		12, 14, 13, 12, 15, 14, 
+		16, 18, 17, 16, 19, 18,
+		20, 22, 21, 20, 23, 22
+	};
+
+	/*static const TextureVertex Vertices[3] = {
 		{{-0.5, -0.5, 0, 1}, {0,1}},
 		{{ 0.5, -0.5, 0, 1}, {1,1}},
 		{{ 0, 0.5, 0, 1}, {0.5,0}}
 	};
 	static const UINT16 Indices[3] = {
 		0, 2, 1
-	};
+	};*/
 
 	// Create vertex buffer
 	D3D11_BUFFER_DESC vertexBufferDesc = { 0 };
 	vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	vertexBufferDesc.ByteWidth = sizeof(TextureVertex) * 3;
+	vertexBufferDesc.ByteWidth = sizeof(Vertices);
 	vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 	vertexBufferDesc.CPUAccessFlags = 0;
 	vertexBufferDesc.MiscFlags = 0;
@@ -360,7 +405,7 @@ HRESULT Renderer::CreateScene()
 	{
 		D3D11_BUFFER_DESC indexBufferDesc = { 0 };
 		indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-		indexBufferDesc.ByteWidth = sizeof(UINT16) * 3;
+		indexBufferDesc.ByteWidth = sizeof(Indices);
 		indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
 		indexBufferDesc.CPUAccessFlags = 0;
 		indexBufferDesc.MiscFlags = 0;
@@ -439,7 +484,7 @@ HRESULT Renderer::CreateScene()
 	{
 		D3D11_RASTERIZER_DESC rasterizerDesc;
 		rasterizerDesc.FillMode = D3D11_FILL_SOLID;
-		rasterizerDesc.CullMode = D3D11_CULL_NONE;
+		rasterizerDesc.CullMode = D3D11_CULL_BACK;
 		rasterizerDesc.FrontCounterClockwise = FALSE;
 		rasterizerDesc.DepthBias = 0;
 		rasterizerDesc.SlopeScaledDepthBias = 0.0f;
@@ -515,7 +560,7 @@ void Renderer::RenderScene()
 		ID3D11Buffer* constBuffers[] = { m_pModelBuffer };
 		m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
 
-		m_pContext->DrawIndexed(3, 0, 0);
+		m_pContext->DrawIndexed(IndicesCount, 0, 0);
 	}
 
 	// Second triangle
@@ -523,7 +568,7 @@ void Renderer::RenderScene()
 		ID3D11Buffer* constBuffers[] = { m_pModelBuffer2 };
 		m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
 
-		m_pContext->DrawIndexed(3, 0, 0);
+		m_pContext->DrawIndexed(IndicesCount, 0, 0);
 	}
 }
 
