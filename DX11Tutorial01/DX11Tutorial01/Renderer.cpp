@@ -220,10 +220,6 @@ bool Renderer::Update()
 	cb.modelMatrix = XMMatrixTranspose(XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec));
 	m_pContext->UpdateSubresource(m_pModelBuffer, 0, NULL, &cb, 0, 0);
 
-	char buffer[100];
-	sprintf_s(buffer, "%f\n", elapsedSec);
-	OutputDebugStringA(buffer);
-
 	cb.modelMatrix = XMMatrixTranspose(XMMatrixTranslation(1.5f, 0, 0));
 	m_pContext->UpdateSubresource(m_pModelBuffer2, 0, NULL, &cb, 0, 0);
 
