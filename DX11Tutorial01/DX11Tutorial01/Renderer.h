@@ -44,6 +44,11 @@ private:
 	ID3D11PixelShader* m_pPixelShader;
 	ID3D11InputLayout* m_pInputLayout;
 
+	ID3D11Texture2D* m_pTexture;
+	ID3D11ShaderResourceView* m_pTextureSRV;
+
+	ID3D11SamplerState* m_pSamplerState;
+
 	ID3D11Buffer* m_pModelBuffer;
 	ID3D11Buffer* m_pModelBuffer2;
 	ID3D11Buffer* m_pSceneBuffer;

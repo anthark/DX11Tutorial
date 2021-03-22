@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <DirectXMath.h>
 #include <d3dcompiler.h>
+#include "DDSTextureLoader11.h"
 
 #include <chrono>
 #define _USE_MATH_DEFINES
@@ -12,10 +13,10 @@
 
 using namespace DirectX;
 
-struct ColorVertex
+struct TextureVertex
 {
 	XMVECTORF32 pos;
-	XMVECTORF32 color;
+	XMFLOAT2 uv;
 };
 
 struct ModelBuffer
@@ -48,6 +49,9 @@ Renderer::Renderer()
 	, m_pVertexShader(NULL)
 	, m_pPixelShader(NULL)
 	, m_pInputLayout(NULL)
+	, m_pTexture(NULL)
+	, m_pTextureSRV(NULL)
+	, m_pSamplerState(NULL)
 	, m_pModelBuffer(NULL)
 	, m_pModelBuffer2(NULL)
 	, m_pSceneBuffer(NULL)
@@ -143,6 +147,20 @@ bool Renderer::Init(HWND hWnd)
 		result = CreateScene();
 	}
 
+	// Create texture samplers
+	if (SUCCEEDED(result))
+	{
+		D3D11_SAMPLER_DESC samplerDesc = {};
+		samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+		samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+		samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+		samplerDesc.MinLOD = 0;
+		samplerDesc.MaxLOD = 1000;
+		//samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+		samplerDesc.Filter = D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT;
+
+		result = m_pDevice->CreateSamplerState(&samplerDesc, &m_pSamplerState);
+	}
 
 	SAFE_RELEASE(pSelectedAdapter);
 	SAFE_RELEASE(pFactory);
@@ -298,10 +316,10 @@ HRESULT Renderer::SetupBackBuffer()
 
 HRESULT Renderer::CreateScene()
 {
-	static const ColorVertex Vertices[3] = {
-		{{-0.5, -0.5, 0, 1}, {1,0,0}},
-		{{ 0.5, -0.5, 0, 1}, {0,1,0}},
-		{{ 0, 0.5, 0, 1}, {0,0,1}}
+	static const TextureVertex Vertices[3] = {
+		{{-0.5, -0.5, 0, 1}, {0,1}},
+		{{ 0.5, -0.5, 0, 1}, {1,1}},
+		{{ 0, 0.5, 0, 1}, {0.5,0}}
 	};
 	static const UINT16 Indices[3] = {
 		0, 2, 1
@@ -310,7 +328,7 @@ HRESULT Renderer::CreateScene()
 	// Create vertex buffer
 	D3D11_BUFFER_DESC vertexBufferDesc = { 0 };
 	vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	vertexBufferDesc.ByteWidth = sizeof(ColorVertex) * 3;
+	vertexBufferDesc.ByteWidth = sizeof(TextureVertex) * 3;
 	vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 	vertexBufferDesc.CPUAccessFlags = 0;
 	vertexBufferDesc.MiscFlags = 0;
@@ -363,7 +381,7 @@ HRESULT Renderer::CreateScene()
 	{
 		D3D11_INPUT_ELEMENT_DESC inputLayoutDesc[2] = {
 			D3D11_INPUT_ELEMENT_DESC{"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
-			D3D11_INPUT_ELEMENT_DESC{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, sizeof(XMVECTORF32), D3D11_INPUT_PER_VERTEX_DATA, 0}
+			D3D11_INPUT_ELEMENT_DESC{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMVECTORF32), D3D11_INPUT_PER_VERTEX_DATA, 0}
 		};
 
 		result = m_pDevice->CreateInputLayout(inputLayoutDesc, 2, pBlob->GetBufferPointer(), pBlob->GetBufferSize(), &m_pInputLayout);
@@ -421,11 +439,22 @@ HRESULT Renderer::CreateScene()
 		result = m_pDevice->CreateRasterizerState(&rasterizerDesc, &m_pRasterizerState);
 	}
 
+	// Create texture
+	if (SUCCEEDED(result))
+	{
+		result = DirectX::CreateDDSTextureFromFile(m_pDevice, L"Rocks.dds", (ID3D11Resource**)&m_pTexture, &m_pTextureSRV);
+	}
+
 	return result;
 }
 
 void Renderer::DestroyScene()
 {
+	SAFE_RELEASE(m_pSamplerState);
+
+	SAFE_RELEASE(m_pTextureSRV);
+	SAFE_RELEASE(m_pTexture);
+
 	SAFE_RELEASE(m_pRasterizerState);
 	SAFE_RELEASE(m_pModelBuffer2);
 	SAFE_RELEASE(m_pModelBuffer);
@@ -443,7 +472,7 @@ void Renderer::DestroyScene()
 void Renderer::RenderScene()
 {
 	ID3D11Buffer* vertexBuffers[] = {m_pVertexBuffer};
-	UINT stride = sizeof(ColorVertex);
+	UINT stride = sizeof(TextureVertex);
 	UINT offset = 0;
 
 	m_pContext->IASetVertexBuffers(0, 1, vertexBuffers, &stride, &offset);
@@ -461,6 +490,12 @@ void Renderer::RenderScene()
 
 	m_pContext->RSSetState(m_pRasterizerState);
 	m_pContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	ID3D11ShaderResourceView* textures[] = {m_pTextureSRV};
+	m_pContext->PSSetShaderResources(0, 1, textures);
+
+	ID3D11SamplerState* samplers[] = {m_pSamplerState};
+	m_pContext->PSSetSamplers(0, 1, samplers);
 
 	// First triangle
 	{
