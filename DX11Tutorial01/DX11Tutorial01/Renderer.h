@@ -19,7 +19,7 @@ public:
 	void MouseMove(int dx, int dy);
 
 private:
-	HRESULT CreateBackBufferRTV();
+	HRESULT SetupBackBuffer();
 
 	HRESULT CreateScene();
 	void DestroyScene();
@@ -34,6 +34,9 @@ private:
 
 	IDXGISwapChain* m_pSwapChain;
 	ID3D11RenderTargetView* m_pBackBufferRTV;
+
+	ID3D11Texture2D* m_pDepth;
+	ID3D11DepthStencilView* m_pDepthDSV;
 
 	ID3D11Buffer* m_pVertexBuffer;
 	ID3D11Buffer* m_pIndexBuffer;
