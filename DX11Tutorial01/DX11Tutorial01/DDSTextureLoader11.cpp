@@ -1270,8 +1270,6 @@ namespace
         {
             mipCount = 1;
         }
-        // AAV TEMP
-        mipCount = 1;
 
         if ((header->ddspf.flags & DDS_FOURCC) &&
             (MAKEFOURCC('D', 'X', '1', '0') == header->ddspf.fourCC))
