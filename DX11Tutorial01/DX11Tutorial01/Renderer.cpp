@@ -15,6 +15,9 @@ using namespace DirectX;
 
 static const UINT IndicesCount = 36;
 
+static const XMVECTORF32 TransPos1{ 2.5f, 0, 0 };
+static const XMVECTORF32 TransPos2{ 3.0f, 0.5f, 0.5f };
+
 struct TextureVertex
 {
 	XMVECTORF32 pos;
@@ -253,12 +256,12 @@ bool Renderer::Update()
 	cb.normalMatrix = XMMatrixIdentity();
 	m_pContext->UpdateSubresource(m_pModelBuffer2, 0, NULL, &cb, 0, 0);
 
-	cb.modelMatrix = XMMatrixTranspose(XMMatrixTranslation(2.5f, 0, 0));
-	cb.objColor = XMVECTORF32{0.75f, 0, 0.75f, 0.3f};
+	cb.modelMatrix = XMMatrixTranspose(XMMatrixTranslation(TransPos1.f[0], TransPos1.f[1], TransPos1.f[2]));
+	cb.objColor = XMVECTORF32{0.75f, 0, 0.75f, 0.15f};
 	m_pContext->UpdateSubresource(m_pModelBuffer3, 0, NULL, &cb, 0, 0);
 
-	cb.modelMatrix = XMMatrixTranspose(XMMatrixTranslation(3.0f, 0.5f, 0.5f));
-	cb.objColor = XMVECTORF32{ 0.1f, 0, 0.6f, 0.5f };
+	cb.modelMatrix = XMMatrixTranspose(XMMatrixTranslation(TransPos2.f[0], TransPos2.f[1], TransPos2.f[2]));
+	cb.objColor = XMVECTORF32{ 0.1f, 0, 0.6f, 0.8f };
 	m_pContext->UpdateSubresource(m_pModelBuffer4, 0, NULL, &cb, 0, 0);
 
 	// Setup scene buffer
@@ -823,23 +826,52 @@ void Renderer::RenderSceneTransparent()
 	m_pContext->RSSetState(m_pTransRasterizerState);
 	m_pContext->OMSetBlendState(m_pTransBlendState, NULL, 0xFFFFFFFF);
 
-	//m_pContext->OMSetDepthStencilState(m_pTransDepthState, 0);
+	m_pContext->OMSetDepthStencilState(m_pTransDepthState, 0);
 
-	// First transparent quad
+	XMMATRIX view = XMMatrixTranslation(0, 0, -m_dist) * XMMatrixRotationAxis({ 1,0,0 }, m_lat) * XMMatrixRotationAxis({ 0,1,0 }, m_lon);
+	XMVECTOR cameraPos = XMVector4Transform(XMVECTOR{ 0,0,0,1 }, view);
+	XMVECTOR cameraDir = -cameraPos / m_dist;
+
+	float transDist1 = XMVector3Dot(TransPos1.v - cameraPos, cameraDir).m128_f32[0];
+	float transDist2 = XMVector3Dot(TransPos2.v - cameraPos, cameraDir).m128_f32[0];
+
+	if (transDist1 < transDist2)
 	{
-		ID3D11Buffer* constBuffers[] = { m_pModelBuffer3 };
-		m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
-		m_pContext->PSSetConstantBuffers(0, 1, constBuffers);
+		// Second transparent quad
+		{
+			ID3D11Buffer* constBuffers[] = { m_pModelBuffer4 };
+			m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
+			m_pContext->PSSetConstantBuffers(0, 1, constBuffers);
 
-		m_pContext->DrawIndexed(6, 0, 0);
+			m_pContext->DrawIndexed(6, 0, 0);
+		}
+		// First transparent quad
+		{
+			ID3D11Buffer* constBuffers[] = { m_pModelBuffer3 };
+			m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
+			m_pContext->PSSetConstantBuffers(0, 1, constBuffers);
+
+			m_pContext->DrawIndexed(6, 0, 0);
+		}
 	}
-	// Second transparent quad
+	else
 	{
-		ID3D11Buffer* constBuffers[] = { m_pModelBuffer4 };
-		m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
-		m_pContext->PSSetConstantBuffers(0, 1, constBuffers);
+		// First transparent quad
+		{
+			ID3D11Buffer* constBuffers[] = { m_pModelBuffer3 };
+			m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
+			m_pContext->PSSetConstantBuffers(0, 1, constBuffers);
 
-		m_pContext->DrawIndexed(6, 0, 0);
+			m_pContext->DrawIndexed(6, 0, 0);
+		}
+		// Second transparent quad
+		{
+			ID3D11Buffer* constBuffers[] = { m_pModelBuffer4 };
+			m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
+			m_pContext->PSSetConstantBuffers(0, 1, constBuffers);
+
+			m_pContext->DrawIndexed(6, 0, 0);
+		}
 	}
 }
 
