@@ -19,16 +19,27 @@ struct TextureVertex
 {
 	XMVECTORF32 pos;
 	XMFLOAT2 uv;
+	XMFLOAT3 normal;
 };
 
 struct ModelBuffer
 {
 	XMMATRIX modelMatrix;
+	XMMATRIX normalMatrix;
+};
+
+struct Light
+{
+	XMVECTORF32 pos;
+	XMVECTORF32 color;
 };
 
 struct SceneBuffer
 {
 	XMMATRIX VP;
+	XMVECTORI32 lightParams; // x - lights count
+
+	Light lights[4];
 };
 
 #define SAFE_RELEASE(p) \
@@ -217,10 +228,15 @@ bool Renderer::Update()
 	double elapsedSec = (usec - m_usec) / 1000000.0;
 
 	ModelBuffer cb;
-	cb.modelMatrix = XMMatrixTranspose(XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec));
+	XMMATRIX m = XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec);
+
+	cb.modelMatrix = XMMatrixTranspose(m);
+	//cb.normalMatrix = XMMatrixTranspose(XMMatrixTranspose(XMMatrixInverse(NULL, m)));
+	cb.normalMatrix = XMMatrixInverse(NULL, m);
 	m_pContext->UpdateSubresource(m_pModelBuffer, 0, NULL, &cb, 0, 0);
 
 	cb.modelMatrix = XMMatrixTranspose(XMMatrixTranslation(1.5f, 0, 0));
+	cb.normalMatrix = XMMatrixIdentity();
 	m_pContext->UpdateSubresource(m_pModelBuffer2, 0, NULL, &cb, 0, 0);
 
 	// Setup scene buffer
@@ -236,6 +252,22 @@ bool Renderer::Update()
 	float height = ((float)m_height / m_width) * width;
 	scb.VP = XMMatrixTranspose(view * XMMatrixPerspectiveLH(width, height, nearPlane, farPlane));
 
+	// Setup lights
+	/*
+	scb.lightParams.i[0] = 1;
+	scb.lights[0].pos = XMVECTORF32{ 0, 1, 0, 0 };
+	scb.lights[0].color = XMVECTORF32{ 0.75f, 0, 0, 0 };
+	*/
+
+	scb.lightParams.i[0] = 3;
+	scb.lights[0].pos = XMVECTORF32{ 0, 1, 0, 0 };
+	scb.lights[0].color = XMVECTORF32{ 0.75f, 0, 0, 0 };
+	scb.lights[1].pos = XMVECTORF32{ 3, 0, 0, 0 };
+	scb.lights[1].color = XMVECTORF32{ 0, 0.75f, 0, 0 };
+	scb.lights[2].pos = XMVECTORF32{ 0, 0, 2, 0 };
+	scb.lights[2].color = XMVECTORF32{ 0, 0, 0.75f, 0 };
+
+
 	m_pContext->UpdateSubresource(m_pSceneBuffer, 0, NULL, &scb, 0, 0);
 
 	return true;
@@ -248,7 +280,7 @@ bool Renderer::Render()
 	ID3D11RenderTargetView* views[] = {m_pBackBufferRTV};
 	m_pContext->OMSetRenderTargets(1, views, m_pDepthDSV);
 
-	static const FLOAT BackColor[4] = {0.0f, 0.5f, 0.0f, 1.0f};
+	static const FLOAT BackColor[4] = {0.25f, 0.25f, 0.25f, 1.0f};
 	m_pContext->ClearRenderTargetView(m_pBackBufferRTV, BackColor);
 	m_pContext->ClearDepthStencilView(m_pDepthDSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
 
@@ -331,35 +363,35 @@ HRESULT Renderer::CreateScene()
 	// Textured cube
 	static const TextureVertex Vertices[24] = {
 		// Bottom face
-		{{-0.5, -0.5,  0.5, 1}, {0,1}},
-		{{ 0.5, -0.5,  0.5, 1}, {1,1}},
-		{{ 0.5, -0.5, -0.5, 1}, {1,0}},
-		{{-0.5, -0.5, -0.5, 1}, {0,0}},
+		{{-0.5, -0.5,  0.5, 1}, {0,1}, {0,-1,0}},
+		{{ 0.5, -0.5,  0.5, 1}, {1,1}, {0,-1,0}},
+		{{ 0.5, -0.5, -0.5, 1}, {1,0}, {0,-1,0}},
+		{{-0.5, -0.5, -0.5, 1}, {0,0}, {0,-1,0}},
 		// Top face
-		{{-0.5,  0.5, -0.5, 1}, {0,1}},
-		{{ 0.5,  0.5, -0.5, 1}, {1,1}},
-		{{ 0.5,  0.5,  0.5, 1}, {1,0}},
-		{{-0.5,  0.5,  0.5, 1}, {0,0}},
+		{{-0.5,  0.5, -0.5, 1}, {0,1}, {0,1,0}},
+		{{ 0.5,  0.5, -0.5, 1}, {1,1}, {0,1,0}},
+		{{ 0.5,  0.5,  0.5, 1}, {1,0}, {0,1,0}},
+		{{-0.5,  0.5,  0.5, 1}, {0,0}, {0,1,0}},
 		// Front face
-		{{ 0.5, -0.5, -0.5, 1}, {0,1}},
-		{{ 0.5, -0.5,  0.5, 1}, {1,1}},
-		{{ 0.5,  0.5,  0.5, 1}, {1,0}},
-		{{ 0.5,  0.5, -0.5, 1}, {0,0}},
+		{{ 0.5, -0.5, -0.5, 1}, {0,1}, {1,0,0}},
+		{{ 0.5, -0.5,  0.5, 1}, {1,1}, {1,0,0}},
+		{{ 0.5,  0.5,  0.5, 1}, {1,0}, {1,0,0}},
+		{{ 0.5,  0.5, -0.5, 1}, {0,0}, {1,0,0}},
 		// Back face
-		{{-0.5, -0.5,  0.5, 1}, {0,1}},
-		{{-0.5, -0.5, -0.5, 1}, {1,1}},
-		{{-0.5,  0.5, -0.5, 1}, {1,0}},
-		{{-0.5,  0.5,  0.5, 1}, {0,0}},
+		{{-0.5, -0.5,  0.5, 1}, {0,1}, {-1,0,0}},
+		{{-0.5, -0.5, -0.5, 1}, {1,1}, {-1,0,0}},
+		{{-0.5,  0.5, -0.5, 1}, {1,0}, {-1,0,0}},
+		{{-0.5,  0.5,  0.5, 1}, {0,0}, {-1,0,0}},
 		// Left face
-		{{ 0.5, -0.5,  0.5, 1}, {0,1}},
-		{{-0.5, -0.5,  0.5, 1}, {1,1}},
-		{{-0.5,  0.5,  0.5, 1}, {1,0}},
-		{{ 0.5,  0.5,  0.5, 1}, {0,0}},
+		{{ 0.5, -0.5,  0.5, 1}, {0,1}, {0,0,1}},
+		{{-0.5, -0.5,  0.5, 1}, {1,1}, {0,0,1}},
+		{{-0.5,  0.5,  0.5, 1}, {1,0}, {0,0,1}},
+		{{ 0.5,  0.5,  0.5, 1}, {0,0}, {0,0,1}},
 		// Right face
-		{{-0.5, -0.5, -0.5, 1}, {0,1}},
-		{{ 0.5, -0.5, -0.5, 1}, {1,1}},
-		{{ 0.5,  0.5, -0.5, 1}, {1,0}},
-		{{-0.5,  0.5, -0.5, 1}, {0,0}},
+		{{-0.5, -0.5, -0.5, 1}, {0,1}, {0,0,-1}},
+		{{ 0.5, -0.5, -0.5, 1}, {1,1}, {0,0,-1}},
+		{{ 0.5,  0.5, -0.5, 1}, {1,0}, {0,0,-1}},
+		{{-0.5,  0.5, -0.5, 1}, {0,0}, {0,0,-1}},
 	};
 	static const UINT16 Indices[IndicesCount] = {
 		0, 2, 1, 0, 3, 2,
@@ -424,12 +456,13 @@ HRESULT Renderer::CreateScene()
 	// Create input layout
 	if (SUCCEEDED(result))
 	{
-		D3D11_INPUT_ELEMENT_DESC inputLayoutDesc[2] = {
+		D3D11_INPUT_ELEMENT_DESC inputLayoutDesc[3] = {
 			D3D11_INPUT_ELEMENT_DESC{"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
-			D3D11_INPUT_ELEMENT_DESC{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMVECTORF32), D3D11_INPUT_PER_VERTEX_DATA, 0}
+			D3D11_INPUT_ELEMENT_DESC{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMVECTORF32), D3D11_INPUT_PER_VERTEX_DATA, 0},
+			D3D11_INPUT_ELEMENT_DESC{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMVECTORF32) + sizeof(XMFLOAT2), D3D11_INPUT_PER_VERTEX_DATA, 0}
 		};
 
-		result = m_pDevice->CreateInputLayout(inputLayoutDesc, 2, pBlob->GetBufferPointer(), pBlob->GetBufferSize(), &m_pInputLayout);
+		result = m_pDevice->CreateInputLayout(inputLayoutDesc, 3, pBlob->GetBufferPointer(), pBlob->GetBufferSize(), &m_pInputLayout);
 		assert(SUCCEEDED(result));
 	}
 	SAFE_RELEASE(pBlob);
@@ -531,6 +564,7 @@ void Renderer::RenderScene()
 	{
 		ID3D11Buffer* constBuffers[] = { m_pSceneBuffer };
 		m_pContext->VSSetConstantBuffers(1, 1, constBuffers);
+		m_pContext->PSSetConstantBuffers(1, 1, constBuffers);
 	}
 
 	m_pContext->RSSetState(m_pRasterizerState);
