@@ -24,9 +24,11 @@ public:
 private:
 	HRESULT SetupBackBuffer();
 
+	HRESULT CreateTransparentObjects();
 	HRESULT CreateScene();
 	void DestroyScene();
 	void RenderScene();
+	void RenderSceneTransparent();
 
 	ID3D11VertexShader* CreateVertexShader(LPCTSTR shaderSource, ID3DBlob** ppBlob);
 	ID3D11PixelShader*  CreatePixelShader(LPCTSTR shaderSource);
@@ -58,6 +60,17 @@ private:
 	ID3D11Buffer* m_pModelBuffer;
 	ID3D11Buffer* m_pModelBuffer2;
 	ID3D11Buffer* m_pSceneBuffer;
+
+	ID3D11Buffer* m_pModelBuffer3;
+	ID3D11Buffer* m_pModelBuffer4;
+	ID3D11Buffer* m_pTransVertexBuffer;
+	ID3D11Buffer* m_pTransIndexBuffer;
+	ID3D11VertexShader* m_pTransVertexShader;
+	ID3D11PixelShader* m_pTransPixelShader;
+	ID3D11InputLayout* m_pTransInputLayout;
+	ID3D11RasterizerState* m_pTransRasterizerState;
+	ID3D11BlendState* m_pTransBlendState;
+	ID3D11DepthStencilState* m_pTransDepthState;
 
 	ID3D11RasterizerState* m_pRasterizerState;
 

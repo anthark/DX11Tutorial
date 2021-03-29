@@ -27,6 +27,7 @@ struct ModelBuffer
 {
 	XMMATRIX modelMatrix;
 	XMMATRIX normalMatrix;
+	XMVECTORF32 objColor;
 };
 
 struct Light
@@ -77,6 +78,15 @@ Renderer::Renderer()
 	, m_lat(0.0f)
 	, m_dist(10.0f)
 	, m_mode(0)
+	, m_pModelBuffer3(NULL)
+	, m_pModelBuffer4(NULL)
+	, m_pTransVertexBuffer(NULL)
+	, m_pTransIndexBuffer(NULL)
+	, m_pTransVertexShader(NULL)
+	, m_pTransPixelShader(NULL)
+	, m_pTransInputLayout(NULL)
+	, m_pTransRasterizerState(NULL)
+	, m_pTransDepthState(NULL)
 {
 }
 
@@ -243,6 +253,14 @@ bool Renderer::Update()
 	cb.normalMatrix = XMMatrixIdentity();
 	m_pContext->UpdateSubresource(m_pModelBuffer2, 0, NULL, &cb, 0, 0);
 
+	cb.modelMatrix = XMMatrixTranspose(XMMatrixTranslation(2.5f, 0, 0));
+	cb.objColor = XMVECTORF32{0.75f, 0, 0.75f, 0.3f};
+	m_pContext->UpdateSubresource(m_pModelBuffer3, 0, NULL, &cb, 0, 0);
+
+	cb.modelMatrix = XMMatrixTranspose(XMMatrixTranslation(3.0f, 0.5f, 0.5f));
+	cb.objColor = XMVECTORF32{ 0.1f, 0, 0.6f, 0.5f };
+	m_pContext->UpdateSubresource(m_pModelBuffer4, 0, NULL, &cb, 0, 0);
+
 	// Setup scene buffer
 	SceneBuffer scb;
 
@@ -272,7 +290,6 @@ bool Renderer::Update()
 	scb.lights[1].color = XMVECTORF32{ 0, 0.75f, 0, 0 };
 	scb.lights[2].pos = XMVECTORF32{ 0, 0, 2, 0 };
 	scb.lights[2].color = XMVECTORF32{ 1, 1, 1, 0 };
-
 
 	m_pContext->UpdateSubresource(m_pSceneBuffer, 0, NULL, &scb, 0, 0);
 
@@ -364,6 +381,149 @@ HRESULT Renderer::SetupBackBuffer()
 		{
 			result = m_pDevice->CreateDepthStencilView(m_pDepth, NULL, &m_pDepthDSV);
 		}
+	}
+
+	return result;
+}
+
+HRESULT Renderer::CreateTransparentObjects()
+{
+	// Textured cube
+	static const XMVECTORF32 Vertices[4] = {
+		{0, -1, -1, 1},
+		{0,  1, -1, 1},
+		{0,  1,  1, 1},
+		{0, -1,  1, 1}
+	};
+	static const UINT16 Indices[6] = {
+		0, 2, 1, 0, 3, 2
+	};
+
+	// Create vertex buffer
+	D3D11_BUFFER_DESC vertexBufferDesc = { 0 };
+	vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+	vertexBufferDesc.ByteWidth = sizeof(Vertices);
+	vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	vertexBufferDesc.CPUAccessFlags = 0;
+	vertexBufferDesc.MiscFlags = 0;
+	vertexBufferDesc.StructureByteStride = 0;
+
+	D3D11_SUBRESOURCE_DATA vertexData = { 0 };
+	vertexData.pSysMem = Vertices;
+	vertexData.SysMemPitch = 0;
+	vertexData.SysMemSlicePitch = 0;
+
+	HRESULT result = m_pDevice->CreateBuffer(&vertexBufferDesc, &vertexData, &m_pTransVertexBuffer);
+	assert(SUCCEEDED(result));
+
+	// Create index buffer
+	if (SUCCEEDED(result))
+	{
+		D3D11_BUFFER_DESC indexBufferDesc = { 0 };
+		indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+		indexBufferDesc.ByteWidth = sizeof(Indices);
+		indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+		indexBufferDesc.CPUAccessFlags = 0;
+		indexBufferDesc.MiscFlags = 0;
+		indexBufferDesc.StructureByteStride = 0;
+
+		D3D11_SUBRESOURCE_DATA indexData = { 0 };
+		indexData.pSysMem = Indices;
+		indexData.SysMemPitch = 0;
+		indexData.SysMemSlicePitch = 0;
+
+		result = m_pDevice->CreateBuffer(&indexBufferDesc, &indexData, &m_pTransIndexBuffer);
+		assert(SUCCEEDED(result));
+	}
+
+	// Create vertex shader
+	ID3DBlob* pBlob = NULL;
+	m_pTransVertexShader = CreateVertexShader(_T("TransColorShader.hlsl"), &pBlob);
+	// Create pixel shader
+	if (m_pTransVertexShader)
+	{
+		m_pTransPixelShader = CreatePixelShader(_T("TransColorShader.hlsl"));
+	}
+	assert(m_pTransVertexShader != NULL && m_pTransPixelShader != NULL);
+	if (m_pTransVertexShader == NULL || m_pTransPixelShader == NULL)
+	{
+		result = E_FAIL;
+	}
+
+	// Create input layout
+	if (SUCCEEDED(result))
+	{
+		D3D11_INPUT_ELEMENT_DESC inputLayoutDesc[1] = {
+			D3D11_INPUT_ELEMENT_DESC{"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0}
+		};
+
+		result = m_pDevice->CreateInputLayout(inputLayoutDesc, 1, pBlob->GetBufferPointer(), pBlob->GetBufferSize(), &m_pTransInputLayout);
+		assert(SUCCEEDED(result));
+	}
+	SAFE_RELEASE(pBlob);
+
+	// Create model constant buffer
+	if (SUCCEEDED(result))
+	{
+		D3D11_BUFFER_DESC cbDesc = { 0 };
+		cbDesc.ByteWidth = sizeof(ModelBuffer);
+		cbDesc.Usage = D3D11_USAGE_DEFAULT;
+		cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+		cbDesc.CPUAccessFlags = 0;
+		cbDesc.MiscFlags = 0;
+		cbDesc.StructureByteStride = 0;
+
+		result = m_pDevice->CreateBuffer(&cbDesc, NULL, &m_pModelBuffer3);
+		if (SUCCEEDED(result))
+		{
+			result = m_pDevice->CreateBuffer(&cbDesc, NULL, &m_pModelBuffer4);
+		}
+	}
+
+	// Create rasterizer state
+	if (SUCCEEDED(result))
+	{
+		D3D11_RASTERIZER_DESC rasterizerDesc;
+		rasterizerDesc.FillMode = D3D11_FILL_SOLID;
+		rasterizerDesc.CullMode = D3D11_CULL_NONE;
+		rasterizerDesc.FrontCounterClockwise = FALSE;
+		rasterizerDesc.DepthBias = 0;
+		rasterizerDesc.SlopeScaledDepthBias = 0.0f;
+		rasterizerDesc.DepthBiasClamp = 0.0f;
+		rasterizerDesc.DepthClipEnable = TRUE;
+		rasterizerDesc.ScissorEnable = FALSE;
+		rasterizerDesc.MultisampleEnable = FALSE;
+		rasterizerDesc.AntialiasedLineEnable = FALSE;
+
+		result = m_pDevice->CreateRasterizerState(&rasterizerDesc, &m_pTransRasterizerState);
+	}
+
+	// Create blend state
+	if (SUCCEEDED(result))
+	{
+		D3D11_BLEND_DESC blendDesc = { 0 };
+		blendDesc.RenderTarget[0].BlendEnable = TRUE;
+		blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+		blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+		blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+		blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+		blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+		blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
+		blendDesc.RenderTarget[0].RenderTargetWriteMask = 0xF;
+
+		result = m_pDevice->CreateBlendState(&blendDesc, &m_pTransBlendState);
+	}
+
+	// Create depth state
+	if (SUCCEEDED(result))
+	{
+		D3D11_DEPTH_STENCIL_DESC dsDesc = { 0 };
+		dsDesc.DepthEnable = TRUE;
+		dsDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+		dsDesc.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
+		dsDesc.StencilEnable = FALSE;
+
+		result = m_pDevice->CreateDepthStencilState(&dsDesc, &m_pTransDepthState);
 	}
 
 	return result;
@@ -540,11 +700,29 @@ HRESULT Renderer::CreateScene()
 		result = DirectX::CreateDDSTextureFromFile(m_pDevice, L"BrickNM.dds", (ID3D11Resource**)&m_pTextureNM, &m_pTextureNMSRV);
 	}
 
+	if (SUCCEEDED(result))
+	{
+		result = CreateTransparentObjects();
+	}
+
 	return result;
 }
 
 void Renderer::DestroyScene()
 {
+	SAFE_RELEASE(m_pTransDepthState);
+
+	SAFE_RELEASE(m_pTransBlendState);
+	SAFE_RELEASE(m_pTransRasterizerState);
+
+	SAFE_RELEASE(m_pModelBuffer3);
+	SAFE_RELEASE(m_pModelBuffer4);
+	SAFE_RELEASE(m_pTransVertexBuffer);
+	SAFE_RELEASE(m_pTransIndexBuffer);
+	SAFE_RELEASE(m_pTransVertexShader);
+	SAFE_RELEASE(m_pTransPixelShader);
+	SAFE_RELEASE(m_pTransInputLayout);
+
 	SAFE_RELEASE(m_pSamplerState);
 
 	SAFE_RELEASE(m_pTextureNMSRV);
@@ -569,6 +747,9 @@ void Renderer::DestroyScene()
 
 void Renderer::RenderScene()
 {
+	// Render transparents
+	//RenderSceneTransparent();
+
 	ID3D11Buffer* vertexBuffers[] = {m_pVertexBuffer};
 	UINT stride = sizeof(TextureVertex);
 	UINT offset = 0;
@@ -610,6 +791,55 @@ void Renderer::RenderScene()
 		m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
 
 		m_pContext->DrawIndexed(IndicesCount, 0, 0);
+	}
+
+	// Render transparents
+	RenderSceneTransparent();
+}
+
+void Renderer::RenderSceneTransparent()
+{
+	ID3D11Buffer* vertexBuffers[] = { m_pTransVertexBuffer };
+	UINT stride = sizeof(XMVECTORF32);
+	UINT offset = 0;
+
+	m_pContext->IASetVertexBuffers(0, 1, vertexBuffers, &stride, &offset);
+	m_pContext->IASetIndexBuffer(m_pTransIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
+
+	m_pContext->IASetInputLayout(m_pTransInputLayout);
+
+	m_pContext->VSSetShader(m_pTransVertexShader, NULL, 0);
+	m_pContext->PSSetShader(m_pTransPixelShader, NULL, 0);
+
+	{
+		ID3D11Buffer* constBuffers[] = { m_pSceneBuffer };
+		m_pContext->VSSetConstantBuffers(1, 1, constBuffers);
+		m_pContext->PSSetConstantBuffers(1, 1, constBuffers);
+	}
+
+	m_pContext->RSSetState(m_pRasterizerState);
+	m_pContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	m_pContext->RSSetState(m_pTransRasterizerState);
+	m_pContext->OMSetBlendState(m_pTransBlendState, NULL, 0xFFFFFFFF);
+
+	//m_pContext->OMSetDepthStencilState(m_pTransDepthState, 0);
+
+	// First transparent quad
+	{
+		ID3D11Buffer* constBuffers[] = { m_pModelBuffer3 };
+		m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
+		m_pContext->PSSetConstantBuffers(0, 1, constBuffers);
+
+		m_pContext->DrawIndexed(6, 0, 0);
+	}
+	// Second transparent quad
+	{
+		ID3D11Buffer* constBuffers[] = { m_pModelBuffer4 };
+		m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
+		m_pContext->PSSetConstantBuffers(0, 1, constBuffers);
+
+		m_pContext->DrawIndexed(6, 0, 0);
 	}
 }
 
