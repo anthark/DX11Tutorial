@@ -56,14 +56,8 @@ Renderer::Renderer()
 	, m_pSamplerState(NULL)
 	, m_pModelBuffer(NULL)
 	, m_pModelBuffer2(NULL)
-	, m_pPostProcBuffer(NULL)
 	, m_pSceneBuffer(NULL)
 	, m_pRasterizerState(NULL)
-	, m_pRenderTarget(NULL)
-	, m_pRenderTargetRTV(NULL)
-	, m_pRenderTargetSRV(NULL)
-	, m_pScreenVertexBuffer(NULL)
-	, m_pScreenIndexBuffer(NULL)
 	, m_usec(0)
 	, m_lon(0.0f)
 	, m_lat(0.0f)
@@ -174,71 +168,6 @@ bool Renderer::Init(HWND hWnd)
 		result = m_pDevice->CreateSamplerState(&samplerDesc, &m_pSamplerState);
 	}
 
-	// Create post-processing rectangle geometry
-	if (SUCCEEDED(result))
-	{
-		static const TextureVertex Vertices[4] = {
-			{{-1, -1, 0, 1}, {0,1}},
-			{{ 1, -1, 0, 1}, {1,1}},
-			{{ 1,  1, 0, 1}, {1,0}},
-			{{-1,  1, 0, 1}, {0,0}}
-		};
-		static const UINT16 Indices[6] = {
-			0, 2, 1, 0, 3, 2
-		};
-
-		// Create vertex buffer
-		D3D11_BUFFER_DESC vertexBufferDesc = { 0 };
-		vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-		vertexBufferDesc.ByteWidth = sizeof(Vertices);
-		vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-		vertexBufferDesc.CPUAccessFlags = 0;
-		vertexBufferDesc.MiscFlags = 0;
-		vertexBufferDesc.StructureByteStride = 0;
-
-		D3D11_SUBRESOURCE_DATA vertexData = { 0 };
-		vertexData.pSysMem = Vertices;
-		vertexData.SysMemPitch = 0;
-		vertexData.SysMemSlicePitch = 0;
-
-		HRESULT result = m_pDevice->CreateBuffer(&vertexBufferDesc, &vertexData, &m_pScreenVertexBuffer);
-		assert(SUCCEEDED(result));
-
-		// Create index buffer
-		if (SUCCEEDED(result))
-		{
-			D3D11_BUFFER_DESC indexBufferDesc = { 0 };
-			indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-			indexBufferDesc.ByteWidth = sizeof(Indices);
-			indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-			indexBufferDesc.CPUAccessFlags = 0;
-			indexBufferDesc.MiscFlags = 0;
-			indexBufferDesc.StructureByteStride = 0;
-
-			D3D11_SUBRESOURCE_DATA indexData = { 0 };
-			indexData.pSysMem = Indices;
-			indexData.SysMemPitch = 0;
-			indexData.SysMemSlicePitch = 0;
-
-			result = m_pDevice->CreateBuffer(&indexBufferDesc, &indexData, &m_pScreenIndexBuffer);
-			assert(SUCCEEDED(result));
-		}
-
-		// Create post proc constant buffer
-		if (SUCCEEDED(result))
-		{
-			D3D11_BUFFER_DESC cbDesc = { 0 };
-			cbDesc.ByteWidth = sizeof(ModelBuffer);
-			cbDesc.Usage = D3D11_USAGE_DEFAULT;
-			cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-			cbDesc.CPUAccessFlags = 0;
-			cbDesc.MiscFlags = 0;
-			cbDesc.StructureByteStride = 0;
-
-			result = m_pDevice->CreateBuffer(&cbDesc, NULL, &m_pPostProcBuffer);
-		}
-	}
-
 	SAFE_RELEASE(pSelectedAdapter);
 	SAFE_RELEASE(pFactory);
 
@@ -248,15 +177,6 @@ bool Renderer::Init(HWND hWnd)
 void Renderer::Term()
 {
 	DestroyScene();
-
-	SAFE_RELEASE(m_pPostProcBuffer);
-
-	SAFE_RELEASE(m_pScreenIndexBuffer);
-	SAFE_RELEASE(m_pScreenVertexBuffer);
-
-	SAFE_RELEASE(m_pRenderTargetRTV);
-	SAFE_RELEASE(m_pRenderTargetSRV);
-	SAFE_RELEASE(m_pRenderTarget);
 
 	SAFE_RELEASE(m_pDepthDSV);
 	SAFE_RELEASE(m_pDepth);
@@ -270,10 +190,6 @@ void Renderer::Resize(UINT width, UINT height)
 {
 	if (width != m_width || height != m_height)
 	{
-		SAFE_RELEASE(m_pRenderTargetRTV);
-		SAFE_RELEASE(m_pRenderTargetSRV);
-		SAFE_RELEASE(m_pRenderTarget);
-
 		SAFE_RELEASE(m_pDepthDSV);
 		SAFE_RELEASE(m_pDepth);
 		SAFE_RELEASE(m_pBackBufferRTV);
@@ -329,58 +245,19 @@ bool Renderer::Render()
 {
 	m_pContext->ClearState();
 
-	ID3D11RenderTargetView* views[] = {m_pRenderTargetRTV};
+	ID3D11RenderTargetView* views[] = {m_pBackBufferRTV};
 	m_pContext->OMSetRenderTargets(1, views, m_pDepthDSV);
 
 	static const FLOAT BackColor[4] = {0.0f, 0.5f, 0.0f, 1.0f};
-	m_pContext->ClearRenderTargetView(m_pRenderTargetRTV, BackColor);
+	m_pContext->ClearRenderTargetView(m_pBackBufferRTV, BackColor);
 	m_pContext->ClearDepthStencilView(m_pDepthDSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
 
-	D3D11_VIEWPORT viewport{0, 0, (float)m_width / 2, (float)m_height / 2, 0.0f, 1.0f};
+	D3D11_VIEWPORT viewport{0, 0, (float)m_width, (float)m_height, 0.0f, 1.0f};
 	m_pContext->RSSetViewports(1, &viewport);
-	D3D11_RECT rect{ 0, 0, (LONG)m_width / 2, (LONG)m_height / 2 };
+	D3D11_RECT rect{ 0, 0, (LONG)m_width, (LONG)m_height };
 	m_pContext->RSSetScissorRects(1, &rect);
 
 	RenderScene();
-
-	// Perform post-processing
-	{
-		ModelBuffer cb;
-		cb.modelMatrix = XMMatrixTranspose(XMMatrixScaling(0.5f, 0.5f * (float)m_height / m_width, 1)/* * XMMatrixRotationAxis({ 0,0,1 }, (float)M_PI / 32) */);
-		m_pContext->UpdateSubresource(m_pPostProcBuffer, 0, NULL, &cb, 0, 0);
-
-		SceneBuffer scb;
-		scb.VP = XMMatrixOrthographicLH(2.0f, 2.0f * (float)m_height / m_width, 0, 1);
-		m_pContext->UpdateSubresource(m_pSceneBuffer, 0, NULL, &scb, 0, 0);
-
-		views[0] = m_pBackBufferRTV;
-		m_pContext->OMSetRenderTargets(1, views, NULL);
-
-		static const FLOAT BackColorBlack[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
-		m_pContext->ClearRenderTargetView(m_pBackBufferRTV, BackColorBlack);
-
-		D3D11_VIEWPORT viewport{ 0, 0, (float)m_width, (float)m_height, 0.0f, 1.0f };
-		m_pContext->RSSetViewports(1, &viewport);
-		D3D11_RECT rect{ 0, 0, (LONG)m_width, (LONG)m_height };
-		m_pContext->RSSetScissorRects(1, &rect);
-
-		ID3D11Buffer* vertexBuffers[] = { m_pScreenVertexBuffer };
-		UINT stride = sizeof(TextureVertex);
-		UINT offset = 0;
-
-		m_pContext->IASetVertexBuffers(0, 1, vertexBuffers, &stride, &offset);
-		m_pContext->IASetIndexBuffer(m_pScreenIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
-
-		ID3D11ShaderResourceView* textures[] = { m_pRenderTargetSRV };
-		m_pContext->PSSetShaderResources(0, 1, textures);
-
-		{
-			ID3D11Buffer* constBuffers[] = { m_pPostProcBuffer };
-			m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
-
-			m_pContext->DrawIndexed(6, 0, 0);
-		}
-	}
 
 	HRESULT result = m_pSwapChain->Present(0, 0);
 	assert(SUCCEEDED(result));
@@ -431,8 +308,8 @@ HRESULT Renderer::SetupBackBuffer()
 		depthDesc.ArraySize = 1;
 		depthDesc.MipLevels = 1;
 		depthDesc.Usage = D3D11_USAGE_DEFAULT;
-		depthDesc.Height = m_height / 2;
-		depthDesc.Width = m_width / 2;
+		depthDesc.Height = m_height;
+		depthDesc.Width = m_width;
 		depthDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
 		depthDesc.CPUAccessFlags = 0;
 		depthDesc.MiscFlags = 0;
@@ -443,31 +320,6 @@ HRESULT Renderer::SetupBackBuffer()
 		if (SUCCEEDED(result))
 		{
 			result = m_pDevice->CreateDepthStencilView(m_pDepth, NULL, &m_pDepthDSV);
-		}
-	}
-	if (SUCCEEDED(result))
-	{
-		D3D11_TEXTURE2D_DESC depthDesc = {};
-		depthDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		depthDesc.ArraySize = 1;
-		depthDesc.MipLevels = 1;
-		depthDesc.Usage = D3D11_USAGE_DEFAULT;
-		depthDesc.Height = m_height / 2;
-		depthDesc.Width = m_width / 2;
-		depthDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-		depthDesc.CPUAccessFlags = 0;
-		depthDesc.MiscFlags = 0;
-		depthDesc.SampleDesc.Count = 1;
-		depthDesc.SampleDesc.Quality = 0;
-
-		result = m_pDevice->CreateTexture2D(&depthDesc, NULL, &m_pRenderTarget);
-		if (SUCCEEDED(result))
-		{
-			result = m_pDevice->CreateRenderTargetView(m_pRenderTarget, NULL, &m_pRenderTargetRTV);
-		}
-		if (SUCCEEDED(result))
-		{
-			result = m_pDevice->CreateShaderResourceView(m_pRenderTarget, NULL, &m_pRenderTargetSRV);
 		}
 	}
 

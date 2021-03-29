@@ -52,16 +52,9 @@ private:
 
 	ID3D11Buffer* m_pModelBuffer;
 	ID3D11Buffer* m_pModelBuffer2;
-	ID3D11Buffer* m_pPostProcBuffer;
 	ID3D11Buffer* m_pSceneBuffer;
 
 	ID3D11RasterizerState* m_pRasterizerState;
-
-	ID3D11Texture2D* m_pRenderTarget;
-	ID3D11RenderTargetView* m_pRenderTargetRTV;
-	ID3D11ShaderResourceView* m_pRenderTargetSRV;
-	ID3D11Buffer* m_pScreenVertexBuffer;
-	ID3D11Buffer* m_pScreenIndexBuffer;
 
 	UINT m_width;
 	UINT m_height;
