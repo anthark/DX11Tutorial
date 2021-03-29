@@ -19,6 +19,8 @@ public:
 	void MouseMove(int dx, int dy);
 	void MouseWheel(int dz);
 
+	void SwitchNormalMode();
+
 private:
 	HRESULT SetupBackBuffer();
 
@@ -48,6 +50,9 @@ private:
 	ID3D11Resource* m_pTexture;
 	ID3D11ShaderResourceView* m_pTextureSRV;
 
+	ID3D11Resource* m_pTextureNM;
+	ID3D11ShaderResourceView* m_pTextureNMSRV;
+
 	ID3D11SamplerState* m_pSamplerState;
 
 	ID3D11Buffer* m_pModelBuffer;
@@ -64,4 +69,6 @@ private:
 	float m_lon;
 	float m_lat;
 	float m_dist;
+
+	int m_mode;
 };

@@ -20,6 +20,7 @@ struct TextureVertex
 	XMVECTORF32 pos;
 	XMFLOAT2 uv;
 	XMFLOAT3 normal;
+	XMFLOAT3 tangent;
 };
 
 struct ModelBuffer
@@ -64,6 +65,8 @@ Renderer::Renderer()
 	, m_pInputLayout(NULL)
 	, m_pTexture(NULL)
 	, m_pTextureSRV(NULL)
+	, m_pTextureNM(NULL)
+	, m_pTextureNMSRV(NULL)
 	, m_pSamplerState(NULL)
 	, m_pModelBuffer(NULL)
 	, m_pModelBuffer2(NULL)
@@ -73,6 +76,7 @@ Renderer::Renderer()
 	, m_lon(0.0f)
 	, m_lat(0.0f)
 	, m_dist(10.0f)
+	, m_mode(0)
 {
 }
 
@@ -228,7 +232,7 @@ bool Renderer::Update()
 	double elapsedSec = (usec - m_usec) / 1000000.0;
 
 	ModelBuffer cb;
-	XMMATRIX m = XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec);
+	XMMATRIX m = XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec * 0.5f);
 
 	cb.modelMatrix = XMMatrixTranspose(m);
 	//cb.normalMatrix = XMMatrixTranspose(XMMatrixTranspose(XMMatrixInverse(NULL, m)));
@@ -252,6 +256,8 @@ bool Renderer::Update()
 	float height = ((float)m_height / m_width) * width;
 	scb.VP = XMMatrixTranspose(view * XMMatrixPerspectiveLH(width, height, nearPlane, farPlane));
 
+	scb.lightParams.i[1] = m_mode;
+
 	// Setup lights
 	/*
 	scb.lightParams.i[0] = 1;
@@ -262,10 +268,10 @@ bool Renderer::Update()
 	scb.lightParams.i[0] = 3;
 	scb.lights[0].pos = XMVECTORF32{ 0, 1, 0, 0 };
 	scb.lights[0].color = XMVECTORF32{ 0.75f, 0, 0, 0 };
-	scb.lights[1].pos = XMVECTORF32{ 3, 0, 0, 0 };
+	scb.lights[1].pos = XMVECTORF32{ 3, 1, 0, 0 };
 	scb.lights[1].color = XMVECTORF32{ 0, 0.75f, 0, 0 };
 	scb.lights[2].pos = XMVECTORF32{ 0, 0, 2, 0 };
-	scb.lights[2].color = XMVECTORF32{ 0, 0, 0.75f, 0 };
+	scb.lights[2].color = XMVECTORF32{ 1, 1, 1, 0 };
 
 
 	m_pContext->UpdateSubresource(m_pSceneBuffer, 0, NULL, &scb, 0, 0);
@@ -321,6 +327,11 @@ void Renderer::MouseWheel(int dz)
 	}
 }
 
+void Renderer::SwitchNormalMode()
+{
+	m_mode = (m_mode + 1) % 2;
+}
+
 HRESULT Renderer::SetupBackBuffer()
 {
 	ID3D11Texture2D* pBackBuffer = NULL;
@@ -363,35 +374,35 @@ HRESULT Renderer::CreateScene()
 	// Textured cube
 	static const TextureVertex Vertices[24] = {
 		// Bottom face
-		{{-0.5, -0.5,  0.5, 1}, {0,1}, {0,-1,0}},
-		{{ 0.5, -0.5,  0.5, 1}, {1,1}, {0,-1,0}},
-		{{ 0.5, -0.5, -0.5, 1}, {1,0}, {0,-1,0}},
-		{{-0.5, -0.5, -0.5, 1}, {0,0}, {0,-1,0}},
+		{{-0.5, -0.5,  0.5, 1}, {0,1}, {0,-1,0}, {1,0,0}},
+		{{ 0.5, -0.5,  0.5, 1}, {1,1}, {0,-1,0}, {1,0,0}},
+		{{ 0.5, -0.5, -0.5, 1}, {1,0}, {0,-1,0}, {1,0,0}},
+		{{-0.5, -0.5, -0.5, 1}, {0,0}, {0,-1,0}, {1,0,0}},
 		// Top face
-		{{-0.5,  0.5, -0.5, 1}, {0,1}, {0,1,0}},
-		{{ 0.5,  0.5, -0.5, 1}, {1,1}, {0,1,0}},
-		{{ 0.5,  0.5,  0.5, 1}, {1,0}, {0,1,0}},
-		{{-0.5,  0.5,  0.5, 1}, {0,0}, {0,1,0}},
+		{{-0.5,  0.5, -0.5, 1}, {0,1}, {0,1,0}, {1,0,0}},
+		{{ 0.5,  0.5, -0.5, 1}, {1,1}, {0,1,0}, {1,0,0}},
+		{{ 0.5,  0.5,  0.5, 1}, {1,0}, {0,1,0}, {1,0,0}},
+		{{-0.5,  0.5,  0.5, 1}, {0,0}, {0,1,0}, {1,0,0}},
 		// Front face
-		{{ 0.5, -0.5, -0.5, 1}, {0,1}, {1,0,0}},
-		{{ 0.5, -0.5,  0.5, 1}, {1,1}, {1,0,0}},
-		{{ 0.5,  0.5,  0.5, 1}, {1,0}, {1,0,0}},
-		{{ 0.5,  0.5, -0.5, 1}, {0,0}, {1,0,0}},
+		{{ 0.5, -0.5, -0.5, 1}, {0,1}, {1,0,0}, {0,0,1}},
+		{{ 0.5, -0.5,  0.5, 1}, {1,1}, {1,0,0}, {0,0,1}},
+		{{ 0.5,  0.5,  0.5, 1}, {1,0}, {1,0,0}, {0,0,1}},
+		{{ 0.5,  0.5, -0.5, 1}, {0,0}, {1,0,0}, {0,0,1}},
 		// Back face
-		{{-0.5, -0.5,  0.5, 1}, {0,1}, {-1,0,0}},
-		{{-0.5, -0.5, -0.5, 1}, {1,1}, {-1,0,0}},
-		{{-0.5,  0.5, -0.5, 1}, {1,0}, {-1,0,0}},
-		{{-0.5,  0.5,  0.5, 1}, {0,0}, {-1,0,0}},
+		{{-0.5, -0.5,  0.5, 1}, {0,1}, {-1,0,0}, {0,0,-1}},
+		{{-0.5, -0.5, -0.5, 1}, {1,1}, {-1,0,0}, {0,0,-1}},
+		{{-0.5,  0.5, -0.5, 1}, {1,0}, {-1,0,0}, {0,0,-1}},
+		{{-0.5,  0.5,  0.5, 1}, {0,0}, {-1,0,0}, {0,0,-1}},
 		// Left face
-		{{ 0.5, -0.5,  0.5, 1}, {0,1}, {0,0,1}},
-		{{-0.5, -0.5,  0.5, 1}, {1,1}, {0,0,1}},
-		{{-0.5,  0.5,  0.5, 1}, {1,0}, {0,0,1}},
-		{{ 0.5,  0.5,  0.5, 1}, {0,0}, {0,0,1}},
+		{{ 0.5, -0.5,  0.5, 1}, {0,1}, {0,0,1}, {-1,0,0}},
+		{{-0.5, -0.5,  0.5, 1}, {1,1}, {0,0,1}, {-1,0,0}},
+		{{-0.5,  0.5,  0.5, 1}, {1,0}, {0,0,1}, {-1,0,0}},
+		{{ 0.5,  0.5,  0.5, 1}, {0,0}, {0,0,1}, {-1,0,0}},
 		// Right face
-		{{-0.5, -0.5, -0.5, 1}, {0,1}, {0,0,-1}},
-		{{ 0.5, -0.5, -0.5, 1}, {1,1}, {0,0,-1}},
-		{{ 0.5,  0.5, -0.5, 1}, {1,0}, {0,0,-1}},
-		{{-0.5,  0.5, -0.5, 1}, {0,0}, {0,0,-1}},
+		{{-0.5, -0.5, -0.5, 1}, {0,1}, {0,0,-1}, {1,0,0}},
+		{{ 0.5, -0.5, -0.5, 1}, {1,1}, {0,0,-1}, {1,0,0}},
+		{{ 0.5,  0.5, -0.5, 1}, {1,0}, {0,0,-1}, {1,0,0}},
+		{{-0.5,  0.5, -0.5, 1}, {0,0}, {0,0,-1}, {1,0,0}},
 	};
 	static const UINT16 Indices[IndicesCount] = {
 		0, 2, 1, 0, 3, 2,
@@ -456,13 +467,14 @@ HRESULT Renderer::CreateScene()
 	// Create input layout
 	if (SUCCEEDED(result))
 	{
-		D3D11_INPUT_ELEMENT_DESC inputLayoutDesc[3] = {
+		D3D11_INPUT_ELEMENT_DESC inputLayoutDesc[4] = {
 			D3D11_INPUT_ELEMENT_DESC{"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
 			D3D11_INPUT_ELEMENT_DESC{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMVECTORF32), D3D11_INPUT_PER_VERTEX_DATA, 0},
-			D3D11_INPUT_ELEMENT_DESC{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMVECTORF32) + sizeof(XMFLOAT2), D3D11_INPUT_PER_VERTEX_DATA, 0}
+			D3D11_INPUT_ELEMENT_DESC{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMVECTORF32) + sizeof(XMFLOAT2), D3D11_INPUT_PER_VERTEX_DATA, 0},
+			D3D11_INPUT_ELEMENT_DESC{"TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMVECTORF32) + sizeof(XMFLOAT2) + sizeof(XMFLOAT3), D3D11_INPUT_PER_VERTEX_DATA, 0},
 		};
 
-		result = m_pDevice->CreateInputLayout(inputLayoutDesc, 3, pBlob->GetBufferPointer(), pBlob->GetBufferSize(), &m_pInputLayout);
+		result = m_pDevice->CreateInputLayout(inputLayoutDesc, 4, pBlob->GetBufferPointer(), pBlob->GetBufferSize(), &m_pInputLayout);
 		assert(SUCCEEDED(result));
 	}
 	SAFE_RELEASE(pBlob);
@@ -517,10 +529,15 @@ HRESULT Renderer::CreateScene()
 		result = m_pDevice->CreateRasterizerState(&rasterizerDesc, &m_pRasterizerState);
 	}
 
-	// Create texture
+	// Create textures
 	if (SUCCEEDED(result))
 	{
-		result = DirectX::CreateDDSTextureFromFile(m_pDevice, L"Rocks.dds", (ID3D11Resource**)&m_pTexture, &m_pTextureSRV);
+		//result = DirectX::CreateDDSTextureFromFile(m_pDevice, L"Rocks.dds", (ID3D11Resource**)&m_pTexture, &m_pTextureSRV);
+		result = DirectX::CreateDDSTextureFromFile(m_pDevice, L"Brick.dds", (ID3D11Resource**)&m_pTexture, &m_pTextureSRV);
+	}
+	if (SUCCEEDED(result))
+	{
+		result = DirectX::CreateDDSTextureFromFile(m_pDevice, L"BrickNM.dds", (ID3D11Resource**)&m_pTextureNM, &m_pTextureNMSRV);
 	}
 
 	return result;
@@ -529,6 +546,9 @@ HRESULT Renderer::CreateScene()
 void Renderer::DestroyScene()
 {
 	SAFE_RELEASE(m_pSamplerState);
+
+	SAFE_RELEASE(m_pTextureNMSRV);
+	SAFE_RELEASE(m_pTextureNM);
 
 	SAFE_RELEASE(m_pTextureSRV);
 	SAFE_RELEASE(m_pTexture);
@@ -570,8 +590,8 @@ void Renderer::RenderScene()
 	m_pContext->RSSetState(m_pRasterizerState);
 	m_pContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-	ID3D11ShaderResourceView* textures[] = {m_pTextureSRV};
-	m_pContext->PSSetShaderResources(0, 1, textures);
+	ID3D11ShaderResourceView* textures[] = {m_pTextureSRV, m_pTextureNMSRV};
+	m_pContext->PSSetShaderResources(0, 2, textures);
 
 	ID3D11SamplerState* samplers[] = {m_pSamplerState};
 	m_pContext->PSSetSamplers(0, 1, samplers);
