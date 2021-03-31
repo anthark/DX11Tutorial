@@ -214,6 +214,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
        g_pRenderer->MouseWheel(GET_WHEEL_DELTA_WPARAM(wParam));
        break;
 
+    case WM_KEYDOWN:
+       if (wParam == '1')
+       {
+          g_pRenderer->SwitchNormalMode();
+       }
+       break;
+
     case WM_PAINT:
         {
             PAINTSTRUCT ps;

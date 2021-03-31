@@ -15,20 +15,36 @@ using namespace DirectX;
 
 static const UINT IndicesCount = 36;
 
+static const XMVECTORF32 TransPos1{ 2.5f, 0, 0 };
+static const XMVECTORF32 TransPos2{ 3.0f, 0.5f, 0.5f };
+
 struct TextureVertex
 {
 	XMVECTORF32 pos;
 	XMFLOAT2 uv;
+	XMFLOAT3 normal;
+	XMFLOAT3 tangent;
 };
 
 struct ModelBuffer
 {
 	XMMATRIX modelMatrix;
+	XMMATRIX normalMatrix;
+	XMVECTORF32 objColor;
+};
+
+struct Light
+{
+	XMVECTORF32 pos;
+	XMVECTORF32 color;
 };
 
 struct SceneBuffer
 {
 	XMMATRIX VP;
+	XMVECTORI32 lightParams; // x - lights count
+
+	Light lights[4];
 };
 
 #define SAFE_RELEASE(p) \
@@ -53,21 +69,27 @@ Renderer::Renderer()
 	, m_pInputLayout(NULL)
 	, m_pTexture(NULL)
 	, m_pTextureSRV(NULL)
+	, m_pTextureNM(NULL)
+	, m_pTextureNMSRV(NULL)
 	, m_pSamplerState(NULL)
 	, m_pModelBuffer(NULL)
 	, m_pModelBuffer2(NULL)
-	, m_pPostProcBuffer(NULL)
 	, m_pSceneBuffer(NULL)
 	, m_pRasterizerState(NULL)
-	, m_pRenderTarget(NULL)
-	, m_pRenderTargetRTV(NULL)
-	, m_pRenderTargetSRV(NULL)
-	, m_pScreenVertexBuffer(NULL)
-	, m_pScreenIndexBuffer(NULL)
 	, m_usec(0)
 	, m_lon(0.0f)
 	, m_lat(0.0f)
 	, m_dist(10.0f)
+	, m_mode(0)
+	, m_pModelBuffer3(NULL)
+	, m_pModelBuffer4(NULL)
+	, m_pTransVertexBuffer(NULL)
+	, m_pTransIndexBuffer(NULL)
+	, m_pTransVertexShader(NULL)
+	, m_pTransPixelShader(NULL)
+	, m_pTransInputLayout(NULL)
+	, m_pTransRasterizerState(NULL)
+	, m_pTransDepthState(NULL)
 {
 }
 
@@ -174,71 +196,6 @@ bool Renderer::Init(HWND hWnd)
 		result = m_pDevice->CreateSamplerState(&samplerDesc, &m_pSamplerState);
 	}
 
-	// Create post-processing rectangle geometry
-	if (SUCCEEDED(result))
-	{
-		static const TextureVertex Vertices[4] = {
-			{{-1, -1, 0, 1}, {0,1}},
-			{{ 1, -1, 0, 1}, {1,1}},
-			{{ 1,  1, 0, 1}, {1,0}},
-			{{-1,  1, 0, 1}, {0,0}}
-		};
-		static const UINT16 Indices[6] = {
-			0, 2, 1, 0, 3, 2
-		};
-
-		// Create vertex buffer
-		D3D11_BUFFER_DESC vertexBufferDesc = { 0 };
-		vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-		vertexBufferDesc.ByteWidth = sizeof(Vertices);
-		vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-		vertexBufferDesc.CPUAccessFlags = 0;
-		vertexBufferDesc.MiscFlags = 0;
-		vertexBufferDesc.StructureByteStride = 0;
-
-		D3D11_SUBRESOURCE_DATA vertexData = { 0 };
-		vertexData.pSysMem = Vertices;
-		vertexData.SysMemPitch = 0;
-		vertexData.SysMemSlicePitch = 0;
-
-		HRESULT result = m_pDevice->CreateBuffer(&vertexBufferDesc, &vertexData, &m_pScreenVertexBuffer);
-		assert(SUCCEEDED(result));
-
-		// Create index buffer
-		if (SUCCEEDED(result))
-		{
-			D3D11_BUFFER_DESC indexBufferDesc = { 0 };
-			indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-			indexBufferDesc.ByteWidth = sizeof(Indices);
-			indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-			indexBufferDesc.CPUAccessFlags = 0;
-			indexBufferDesc.MiscFlags = 0;
-			indexBufferDesc.StructureByteStride = 0;
-
-			D3D11_SUBRESOURCE_DATA indexData = { 0 };
-			indexData.pSysMem = Indices;
-			indexData.SysMemPitch = 0;
-			indexData.SysMemSlicePitch = 0;
-
-			result = m_pDevice->CreateBuffer(&indexBufferDesc, &indexData, &m_pScreenIndexBuffer);
-			assert(SUCCEEDED(result));
-		}
-
-		// Create post proc constant buffer
-		if (SUCCEEDED(result))
-		{
-			D3D11_BUFFER_DESC cbDesc = { 0 };
-			cbDesc.ByteWidth = sizeof(ModelBuffer);
-			cbDesc.Usage = D3D11_USAGE_DEFAULT;
-			cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-			cbDesc.CPUAccessFlags = 0;
-			cbDesc.MiscFlags = 0;
-			cbDesc.StructureByteStride = 0;
-
-			result = m_pDevice->CreateBuffer(&cbDesc, NULL, &m_pPostProcBuffer);
-		}
-	}
-
 	SAFE_RELEASE(pSelectedAdapter);
 	SAFE_RELEASE(pFactory);
 
@@ -248,15 +205,6 @@ bool Renderer::Init(HWND hWnd)
 void Renderer::Term()
 {
 	DestroyScene();
-
-	SAFE_RELEASE(m_pPostProcBuffer);
-
-	SAFE_RELEASE(m_pScreenIndexBuffer);
-	SAFE_RELEASE(m_pScreenVertexBuffer);
-
-	SAFE_RELEASE(m_pRenderTargetRTV);
-	SAFE_RELEASE(m_pRenderTargetSRV);
-	SAFE_RELEASE(m_pRenderTarget);
 
 	SAFE_RELEASE(m_pDepthDSV);
 	SAFE_RELEASE(m_pDepth);
@@ -270,10 +218,6 @@ void Renderer::Resize(UINT width, UINT height)
 {
 	if (width != m_width || height != m_height)
 	{
-		SAFE_RELEASE(m_pRenderTargetRTV);
-		SAFE_RELEASE(m_pRenderTargetSRV);
-		SAFE_RELEASE(m_pRenderTarget);
-
 		SAFE_RELEASE(m_pDepthDSV);
 		SAFE_RELEASE(m_pDepth);
 		SAFE_RELEASE(m_pBackBufferRTV);
@@ -301,11 +245,24 @@ bool Renderer::Update()
 	double elapsedSec = (usec - m_usec) / 1000000.0;
 
 	ModelBuffer cb;
-	cb.modelMatrix = XMMatrixTranspose(XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec));
+	XMMATRIX m = XMMatrixRotationAxis({ 0,1,0 }, (float)elapsedSec * 0.5f);
+
+	cb.modelMatrix = XMMatrixTranspose(m);
+	//cb.normalMatrix = XMMatrixTranspose(XMMatrixTranspose(XMMatrixInverse(NULL, m)));
+	cb.normalMatrix = XMMatrixInverse(NULL, m);
 	m_pContext->UpdateSubresource(m_pModelBuffer, 0, NULL, &cb, 0, 0);
 
 	cb.modelMatrix = XMMatrixTranspose(XMMatrixTranslation(1.5f, 0, 0));
+	cb.normalMatrix = XMMatrixIdentity();
 	m_pContext->UpdateSubresource(m_pModelBuffer2, 0, NULL, &cb, 0, 0);
+
+	cb.modelMatrix = XMMatrixTranspose(XMMatrixTranslation(TransPos1.f[0], TransPos1.f[1], TransPos1.f[2]));
+	cb.objColor = XMVECTORF32{0.75f, 0, 0.75f, 0.15f};
+	m_pContext->UpdateSubresource(m_pModelBuffer3, 0, NULL, &cb, 0, 0);
+
+	cb.modelMatrix = XMMatrixTranspose(XMMatrixTranslation(TransPos2.f[0], TransPos2.f[1], TransPos2.f[2]));
+	cb.objColor = XMVECTORF32{ 0.1f, 0, 0.6f, 0.8f };
+	m_pContext->UpdateSubresource(m_pModelBuffer4, 0, NULL, &cb, 0, 0);
 
 	// Setup scene buffer
 	SceneBuffer scb;
@@ -320,6 +277,23 @@ bool Renderer::Update()
 	float height = ((float)m_height / m_width) * width;
 	scb.VP = XMMatrixTranspose(view * XMMatrixPerspectiveLH(width, height, nearPlane, farPlane));
 
+	scb.lightParams.i[1] = m_mode;
+
+	// Setup lights
+	/*
+	scb.lightParams.i[0] = 1;
+	scb.lights[0].pos = XMVECTORF32{ 0, 1, 0, 0 };
+	scb.lights[0].color = XMVECTORF32{ 0.75f, 0, 0, 0 };
+	*/
+
+	scb.lightParams.i[0] = 3;
+	scb.lights[0].pos = XMVECTORF32{ 0, 1, 0, 0 };
+	scb.lights[0].color = XMVECTORF32{ 0.75f, 0, 0, 0 };
+	scb.lights[1].pos = XMVECTORF32{ 3, 1, 0, 0 };
+	scb.lights[1].color = XMVECTORF32{ 0, 0.75f, 0, 0 };
+	scb.lights[2].pos = XMVECTORF32{ 0, 0, 2, 0 };
+	scb.lights[2].color = XMVECTORF32{ 1, 1, 1, 0 };
+
 	m_pContext->UpdateSubresource(m_pSceneBuffer, 0, NULL, &scb, 0, 0);
 
 	return true;
@@ -329,58 +303,19 @@ bool Renderer::Render()
 {
 	m_pContext->ClearState();
 
-	ID3D11RenderTargetView* views[] = {m_pRenderTargetRTV};
+	ID3D11RenderTargetView* views[] = {m_pBackBufferRTV};
 	m_pContext->OMSetRenderTargets(1, views, m_pDepthDSV);
 
-	static const FLOAT BackColor[4] = {0.0f, 0.5f, 0.0f, 1.0f};
-	m_pContext->ClearRenderTargetView(m_pRenderTargetRTV, BackColor);
+	static const FLOAT BackColor[4] = {0.25f, 0.25f, 0.25f, 1.0f};
+	m_pContext->ClearRenderTargetView(m_pBackBufferRTV, BackColor);
 	m_pContext->ClearDepthStencilView(m_pDepthDSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
 
-	D3D11_VIEWPORT viewport{0, 0, (float)m_width / 2, (float)m_height / 2, 0.0f, 1.0f};
+	D3D11_VIEWPORT viewport{0, 0, (float)m_width, (float)m_height, 0.0f, 1.0f};
 	m_pContext->RSSetViewports(1, &viewport);
-	D3D11_RECT rect{ 0, 0, (LONG)m_width / 2, (LONG)m_height / 2 };
+	D3D11_RECT rect{ 0, 0, (LONG)m_width, (LONG)m_height };
 	m_pContext->RSSetScissorRects(1, &rect);
 
 	RenderScene();
-
-	// Perform post-processing
-	{
-		ModelBuffer cb;
-		cb.modelMatrix = XMMatrixTranspose(XMMatrixScaling(0.5f, 0.5f * (float)m_height / m_width, 1)/* * XMMatrixRotationAxis({ 0,0,1 }, (float)M_PI / 32) */);
-		m_pContext->UpdateSubresource(m_pPostProcBuffer, 0, NULL, &cb, 0, 0);
-
-		SceneBuffer scb;
-		scb.VP = XMMatrixOrthographicLH(2.0f, 2.0f * (float)m_height / m_width, 0, 1);
-		m_pContext->UpdateSubresource(m_pSceneBuffer, 0, NULL, &scb, 0, 0);
-
-		views[0] = m_pBackBufferRTV;
-		m_pContext->OMSetRenderTargets(1, views, NULL);
-
-		static const FLOAT BackColorBlack[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
-		m_pContext->ClearRenderTargetView(m_pBackBufferRTV, BackColorBlack);
-
-		D3D11_VIEWPORT viewport{ 0, 0, (float)m_width, (float)m_height, 0.0f, 1.0f };
-		m_pContext->RSSetViewports(1, &viewport);
-		D3D11_RECT rect{ 0, 0, (LONG)m_width, (LONG)m_height };
-		m_pContext->RSSetScissorRects(1, &rect);
-
-		ID3D11Buffer* vertexBuffers[] = { m_pScreenVertexBuffer };
-		UINT stride = sizeof(TextureVertex);
-		UINT offset = 0;
-
-		m_pContext->IASetVertexBuffers(0, 1, vertexBuffers, &stride, &offset);
-		m_pContext->IASetIndexBuffer(m_pScreenIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
-
-		ID3D11ShaderResourceView* textures[] = { m_pRenderTargetSRV };
-		m_pContext->PSSetShaderResources(0, 1, textures);
-
-		{
-			ID3D11Buffer* constBuffers[] = { m_pPostProcBuffer };
-			m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
-
-			m_pContext->DrawIndexed(6, 0, 0);
-		}
-	}
 
 	HRESULT result = m_pSwapChain->Present(0, 0);
 	assert(SUCCEEDED(result));
@@ -412,6 +347,11 @@ void Renderer::MouseWheel(int dz)
 	}
 }
 
+void Renderer::SwitchNormalMode()
+{
+	m_mode = (m_mode + 1) % 2;
+}
+
 HRESULT Renderer::SetupBackBuffer()
 {
 	ID3D11Texture2D* pBackBuffer = NULL;
@@ -431,8 +371,8 @@ HRESULT Renderer::SetupBackBuffer()
 		depthDesc.ArraySize = 1;
 		depthDesc.MipLevels = 1;
 		depthDesc.Usage = D3D11_USAGE_DEFAULT;
-		depthDesc.Height = m_height / 2;
-		depthDesc.Width = m_width / 2;
+		depthDesc.Height = m_height;
+		depthDesc.Width = m_width;
 		depthDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
 		depthDesc.CPUAccessFlags = 0;
 		depthDesc.MiscFlags = 0;
@@ -445,30 +385,148 @@ HRESULT Renderer::SetupBackBuffer()
 			result = m_pDevice->CreateDepthStencilView(m_pDepth, NULL, &m_pDepthDSV);
 		}
 	}
+
+	return result;
+}
+
+HRESULT Renderer::CreateTransparentObjects()
+{
+	// Textured cube
+	static const XMVECTORF32 Vertices[4] = {
+		{0, -1, -1, 1},
+		{0,  1, -1, 1},
+		{0,  1,  1, 1},
+		{0, -1,  1, 1}
+	};
+	static const UINT16 Indices[6] = {
+		0, 2, 1, 0, 3, 2
+	};
+
+	// Create vertex buffer
+	D3D11_BUFFER_DESC vertexBufferDesc = { 0 };
+	vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+	vertexBufferDesc.ByteWidth = sizeof(Vertices);
+	vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	vertexBufferDesc.CPUAccessFlags = 0;
+	vertexBufferDesc.MiscFlags = 0;
+	vertexBufferDesc.StructureByteStride = 0;
+
+	D3D11_SUBRESOURCE_DATA vertexData = { 0 };
+	vertexData.pSysMem = Vertices;
+	vertexData.SysMemPitch = 0;
+	vertexData.SysMemSlicePitch = 0;
+
+	HRESULT result = m_pDevice->CreateBuffer(&vertexBufferDesc, &vertexData, &m_pTransVertexBuffer);
+	assert(SUCCEEDED(result));
+
+	// Create index buffer
 	if (SUCCEEDED(result))
 	{
-		D3D11_TEXTURE2D_DESC depthDesc = {};
-		depthDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		depthDesc.ArraySize = 1;
-		depthDesc.MipLevels = 1;
-		depthDesc.Usage = D3D11_USAGE_DEFAULT;
-		depthDesc.Height = m_height / 2;
-		depthDesc.Width = m_width / 2;
-		depthDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-		depthDesc.CPUAccessFlags = 0;
-		depthDesc.MiscFlags = 0;
-		depthDesc.SampleDesc.Count = 1;
-		depthDesc.SampleDesc.Quality = 0;
+		D3D11_BUFFER_DESC indexBufferDesc = { 0 };
+		indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+		indexBufferDesc.ByteWidth = sizeof(Indices);
+		indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+		indexBufferDesc.CPUAccessFlags = 0;
+		indexBufferDesc.MiscFlags = 0;
+		indexBufferDesc.StructureByteStride = 0;
 
-		result = m_pDevice->CreateTexture2D(&depthDesc, NULL, &m_pRenderTarget);
+		D3D11_SUBRESOURCE_DATA indexData = { 0 };
+		indexData.pSysMem = Indices;
+		indexData.SysMemPitch = 0;
+		indexData.SysMemSlicePitch = 0;
+
+		result = m_pDevice->CreateBuffer(&indexBufferDesc, &indexData, &m_pTransIndexBuffer);
+		assert(SUCCEEDED(result));
+	}
+
+	// Create vertex shader
+	ID3DBlob* pBlob = NULL;
+	m_pTransVertexShader = CreateVertexShader(_T("TransColorShader.hlsl"), &pBlob);
+	// Create pixel shader
+	if (m_pTransVertexShader)
+	{
+		m_pTransPixelShader = CreatePixelShader(_T("TransColorShader.hlsl"));
+	}
+	assert(m_pTransVertexShader != NULL && m_pTransPixelShader != NULL);
+	if (m_pTransVertexShader == NULL || m_pTransPixelShader == NULL)
+	{
+		result = E_FAIL;
+	}
+
+	// Create input layout
+	if (SUCCEEDED(result))
+	{
+		D3D11_INPUT_ELEMENT_DESC inputLayoutDesc[1] = {
+			D3D11_INPUT_ELEMENT_DESC{"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0}
+		};
+
+		result = m_pDevice->CreateInputLayout(inputLayoutDesc, 1, pBlob->GetBufferPointer(), pBlob->GetBufferSize(), &m_pTransInputLayout);
+		assert(SUCCEEDED(result));
+	}
+	SAFE_RELEASE(pBlob);
+
+	// Create model constant buffer
+	if (SUCCEEDED(result))
+	{
+		D3D11_BUFFER_DESC cbDesc = { 0 };
+		cbDesc.ByteWidth = sizeof(ModelBuffer);
+		cbDesc.Usage = D3D11_USAGE_DEFAULT;
+		cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+		cbDesc.CPUAccessFlags = 0;
+		cbDesc.MiscFlags = 0;
+		cbDesc.StructureByteStride = 0;
+
+		result = m_pDevice->CreateBuffer(&cbDesc, NULL, &m_pModelBuffer3);
 		if (SUCCEEDED(result))
 		{
-			result = m_pDevice->CreateRenderTargetView(m_pRenderTarget, NULL, &m_pRenderTargetRTV);
+			result = m_pDevice->CreateBuffer(&cbDesc, NULL, &m_pModelBuffer4);
 		}
-		if (SUCCEEDED(result))
-		{
-			result = m_pDevice->CreateShaderResourceView(m_pRenderTarget, NULL, &m_pRenderTargetSRV);
-		}
+	}
+
+	// Create rasterizer state
+	if (SUCCEEDED(result))
+	{
+		D3D11_RASTERIZER_DESC rasterizerDesc;
+		rasterizerDesc.FillMode = D3D11_FILL_SOLID;
+		rasterizerDesc.CullMode = D3D11_CULL_NONE;
+		rasterizerDesc.FrontCounterClockwise = FALSE;
+		rasterizerDesc.DepthBias = 0;
+		rasterizerDesc.SlopeScaledDepthBias = 0.0f;
+		rasterizerDesc.DepthBiasClamp = 0.0f;
+		rasterizerDesc.DepthClipEnable = TRUE;
+		rasterizerDesc.ScissorEnable = FALSE;
+		rasterizerDesc.MultisampleEnable = FALSE;
+		rasterizerDesc.AntialiasedLineEnable = FALSE;
+
+		result = m_pDevice->CreateRasterizerState(&rasterizerDesc, &m_pTransRasterizerState);
+	}
+
+	// Create blend state
+	if (SUCCEEDED(result))
+	{
+		D3D11_BLEND_DESC blendDesc = { 0 };
+		blendDesc.RenderTarget[0].BlendEnable = TRUE;
+		blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+		blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+		blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+		blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+		blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+		blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
+		blendDesc.RenderTarget[0].RenderTargetWriteMask = 0xF;
+
+		result = m_pDevice->CreateBlendState(&blendDesc, &m_pTransBlendState);
+	}
+
+	// Create depth state
+	if (SUCCEEDED(result))
+	{
+		D3D11_DEPTH_STENCIL_DESC dsDesc = { 0 };
+		dsDesc.DepthEnable = TRUE;
+		dsDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+		dsDesc.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
+		dsDesc.StencilEnable = FALSE;
+
+		result = m_pDevice->CreateDepthStencilState(&dsDesc, &m_pTransDepthState);
 	}
 
 	return result;
@@ -479,35 +537,35 @@ HRESULT Renderer::CreateScene()
 	// Textured cube
 	static const TextureVertex Vertices[24] = {
 		// Bottom face
-		{{-0.5, -0.5,  0.5, 1}, {0,1}},
-		{{ 0.5, -0.5,  0.5, 1}, {1,1}},
-		{{ 0.5, -0.5, -0.5, 1}, {1,0}},
-		{{-0.5, -0.5, -0.5, 1}, {0,0}},
+		{{-0.5, -0.5,  0.5, 1}, {0,1}, {0,-1,0}, {1,0,0}},
+		{{ 0.5, -0.5,  0.5, 1}, {1,1}, {0,-1,0}, {1,0,0}},
+		{{ 0.5, -0.5, -0.5, 1}, {1,0}, {0,-1,0}, {1,0,0}},
+		{{-0.5, -0.5, -0.5, 1}, {0,0}, {0,-1,0}, {1,0,0}},
 		// Top face
-		{{-0.5,  0.5, -0.5, 1}, {0,1}},
-		{{ 0.5,  0.5, -0.5, 1}, {1,1}},
-		{{ 0.5,  0.5,  0.5, 1}, {1,0}},
-		{{-0.5,  0.5,  0.5, 1}, {0,0}},
+		{{-0.5,  0.5, -0.5, 1}, {0,1}, {0,1,0}, {1,0,0}},
+		{{ 0.5,  0.5, -0.5, 1}, {1,1}, {0,1,0}, {1,0,0}},
+		{{ 0.5,  0.5,  0.5, 1}, {1,0}, {0,1,0}, {1,0,0}},
+		{{-0.5,  0.5,  0.5, 1}, {0,0}, {0,1,0}, {1,0,0}},
 		// Front face
-		{{ 0.5, -0.5, -0.5, 1}, {0,1}},
-		{{ 0.5, -0.5,  0.5, 1}, {1,1}},
-		{{ 0.5,  0.5,  0.5, 1}, {1,0}},
-		{{ 0.5,  0.5, -0.5, 1}, {0,0}},
+		{{ 0.5, -0.5, -0.5, 1}, {0,1}, {1,0,0}, {0,0,1}},
+		{{ 0.5, -0.5,  0.5, 1}, {1,1}, {1,0,0}, {0,0,1}},
+		{{ 0.5,  0.5,  0.5, 1}, {1,0}, {1,0,0}, {0,0,1}},
+		{{ 0.5,  0.5, -0.5, 1}, {0,0}, {1,0,0}, {0,0,1}},
 		// Back face
-		{{-0.5, -0.5,  0.5, 1}, {0,1}},
-		{{-0.5, -0.5, -0.5, 1}, {1,1}},
-		{{-0.5,  0.5, -0.5, 1}, {1,0}},
-		{{-0.5,  0.5,  0.5, 1}, {0,0}},
+		{{-0.5, -0.5,  0.5, 1}, {0,1}, {-1,0,0}, {0,0,-1}},
+		{{-0.5, -0.5, -0.5, 1}, {1,1}, {-1,0,0}, {0,0,-1}},
+		{{-0.5,  0.5, -0.5, 1}, {1,0}, {-1,0,0}, {0,0,-1}},
+		{{-0.5,  0.5,  0.5, 1}, {0,0}, {-1,0,0}, {0,0,-1}},
 		// Left face
-		{{ 0.5, -0.5,  0.5, 1}, {0,1}},
-		{{-0.5, -0.5,  0.5, 1}, {1,1}},
-		{{-0.5,  0.5,  0.5, 1}, {1,0}},
-		{{ 0.5,  0.5,  0.5, 1}, {0,0}},
+		{{ 0.5, -0.5,  0.5, 1}, {0,1}, {0,0,1}, {-1,0,0}},
+		{{-0.5, -0.5,  0.5, 1}, {1,1}, {0,0,1}, {-1,0,0}},
+		{{-0.5,  0.5,  0.5, 1}, {1,0}, {0,0,1}, {-1,0,0}},
+		{{ 0.5,  0.5,  0.5, 1}, {0,0}, {0,0,1}, {-1,0,0}},
 		// Right face
-		{{-0.5, -0.5, -0.5, 1}, {0,1}},
-		{{ 0.5, -0.5, -0.5, 1}, {1,1}},
-		{{ 0.5,  0.5, -0.5, 1}, {1,0}},
-		{{-0.5,  0.5, -0.5, 1}, {0,0}},
+		{{-0.5, -0.5, -0.5, 1}, {0,1}, {0,0,-1}, {1,0,0}},
+		{{ 0.5, -0.5, -0.5, 1}, {1,1}, {0,0,-1}, {1,0,0}},
+		{{ 0.5,  0.5, -0.5, 1}, {1,0}, {0,0,-1}, {1,0,0}},
+		{{-0.5,  0.5, -0.5, 1}, {0,0}, {0,0,-1}, {1,0,0}},
 	};
 	static const UINT16 Indices[IndicesCount] = {
 		0, 2, 1, 0, 3, 2,
@@ -572,12 +630,14 @@ HRESULT Renderer::CreateScene()
 	// Create input layout
 	if (SUCCEEDED(result))
 	{
-		D3D11_INPUT_ELEMENT_DESC inputLayoutDesc[2] = {
+		D3D11_INPUT_ELEMENT_DESC inputLayoutDesc[4] = {
 			D3D11_INPUT_ELEMENT_DESC{"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
-			D3D11_INPUT_ELEMENT_DESC{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMVECTORF32), D3D11_INPUT_PER_VERTEX_DATA, 0}
+			D3D11_INPUT_ELEMENT_DESC{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMVECTORF32), D3D11_INPUT_PER_VERTEX_DATA, 0},
+			D3D11_INPUT_ELEMENT_DESC{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMVECTORF32) + sizeof(XMFLOAT2), D3D11_INPUT_PER_VERTEX_DATA, 0},
+			D3D11_INPUT_ELEMENT_DESC{"TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMVECTORF32) + sizeof(XMFLOAT2) + sizeof(XMFLOAT3), D3D11_INPUT_PER_VERTEX_DATA, 0},
 		};
 
-		result = m_pDevice->CreateInputLayout(inputLayoutDesc, 2, pBlob->GetBufferPointer(), pBlob->GetBufferSize(), &m_pInputLayout);
+		result = m_pDevice->CreateInputLayout(inputLayoutDesc, 4, pBlob->GetBufferPointer(), pBlob->GetBufferSize(), &m_pInputLayout);
 		assert(SUCCEEDED(result));
 	}
 	SAFE_RELEASE(pBlob);
@@ -632,10 +692,20 @@ HRESULT Renderer::CreateScene()
 		result = m_pDevice->CreateRasterizerState(&rasterizerDesc, &m_pRasterizerState);
 	}
 
-	// Create texture
+	// Create textures
 	if (SUCCEEDED(result))
 	{
-		result = DirectX::CreateDDSTextureFromFile(m_pDevice, L"Rocks.dds", (ID3D11Resource**)&m_pTexture, &m_pTextureSRV);
+		//result = DirectX::CreateDDSTextureFromFile(m_pDevice, L"Rocks.dds", (ID3D11Resource**)&m_pTexture, &m_pTextureSRV);
+		result = DirectX::CreateDDSTextureFromFile(m_pDevice, L"Brick.dds", (ID3D11Resource**)&m_pTexture, &m_pTextureSRV);
+	}
+	if (SUCCEEDED(result))
+	{
+		result = DirectX::CreateDDSTextureFromFile(m_pDevice, L"BrickNM.dds", (ID3D11Resource**)&m_pTextureNM, &m_pTextureNMSRV);
+	}
+
+	if (SUCCEEDED(result))
+	{
+		result = CreateTransparentObjects();
 	}
 
 	return result;
@@ -643,7 +713,23 @@ HRESULT Renderer::CreateScene()
 
 void Renderer::DestroyScene()
 {
+	SAFE_RELEASE(m_pTransDepthState);
+
+	SAFE_RELEASE(m_pTransBlendState);
+	SAFE_RELEASE(m_pTransRasterizerState);
+
+	SAFE_RELEASE(m_pModelBuffer3);
+	SAFE_RELEASE(m_pModelBuffer4);
+	SAFE_RELEASE(m_pTransVertexBuffer);
+	SAFE_RELEASE(m_pTransIndexBuffer);
+	SAFE_RELEASE(m_pTransVertexShader);
+	SAFE_RELEASE(m_pTransPixelShader);
+	SAFE_RELEASE(m_pTransInputLayout);
+
 	SAFE_RELEASE(m_pSamplerState);
+
+	SAFE_RELEASE(m_pTextureNMSRV);
+	SAFE_RELEASE(m_pTextureNM);
 
 	SAFE_RELEASE(m_pTextureSRV);
 	SAFE_RELEASE(m_pTexture);
@@ -664,6 +750,9 @@ void Renderer::DestroyScene()
 
 void Renderer::RenderScene()
 {
+	// Render transparents
+	//RenderSceneTransparent();
+
 	ID3D11Buffer* vertexBuffers[] = {m_pVertexBuffer};
 	UINT stride = sizeof(TextureVertex);
 	UINT offset = 0;
@@ -679,13 +768,14 @@ void Renderer::RenderScene()
 	{
 		ID3D11Buffer* constBuffers[] = { m_pSceneBuffer };
 		m_pContext->VSSetConstantBuffers(1, 1, constBuffers);
+		m_pContext->PSSetConstantBuffers(1, 1, constBuffers);
 	}
 
 	m_pContext->RSSetState(m_pRasterizerState);
 	m_pContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-	ID3D11ShaderResourceView* textures[] = {m_pTextureSRV};
-	m_pContext->PSSetShaderResources(0, 1, textures);
+	ID3D11ShaderResourceView* textures[] = {m_pTextureSRV, m_pTextureNMSRV};
+	m_pContext->PSSetShaderResources(0, 2, textures);
 
 	ID3D11SamplerState* samplers[] = {m_pSamplerState};
 	m_pContext->PSSetSamplers(0, 1, samplers);
@@ -704,6 +794,84 @@ void Renderer::RenderScene()
 		m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
 
 		m_pContext->DrawIndexed(IndicesCount, 0, 0);
+	}
+
+	// Render transparents
+	RenderSceneTransparent();
+}
+
+void Renderer::RenderSceneTransparent()
+{
+	ID3D11Buffer* vertexBuffers[] = { m_pTransVertexBuffer };
+	UINT stride = sizeof(XMVECTORF32);
+	UINT offset = 0;
+
+	m_pContext->IASetVertexBuffers(0, 1, vertexBuffers, &stride, &offset);
+	m_pContext->IASetIndexBuffer(m_pTransIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
+
+	m_pContext->IASetInputLayout(m_pTransInputLayout);
+
+	m_pContext->VSSetShader(m_pTransVertexShader, NULL, 0);
+	m_pContext->PSSetShader(m_pTransPixelShader, NULL, 0);
+
+	{
+		ID3D11Buffer* constBuffers[] = { m_pSceneBuffer };
+		m_pContext->VSSetConstantBuffers(1, 1, constBuffers);
+		m_pContext->PSSetConstantBuffers(1, 1, constBuffers);
+	}
+
+	m_pContext->RSSetState(m_pRasterizerState);
+	m_pContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	m_pContext->RSSetState(m_pTransRasterizerState);
+	m_pContext->OMSetBlendState(m_pTransBlendState, NULL, 0xFFFFFFFF);
+
+	m_pContext->OMSetDepthStencilState(m_pTransDepthState, 0);
+
+	XMMATRIX view = XMMatrixTranslation(0, 0, -m_dist) * XMMatrixRotationAxis({ 1,0,0 }, m_lat) * XMMatrixRotationAxis({ 0,1,0 }, m_lon);
+	XMVECTOR cameraPos = XMVector4Transform(XMVECTOR{ 0,0,0,1 }, view);
+	XMVECTOR cameraDir = -cameraPos / m_dist;
+
+	float transDist1 = XMVector3Dot(TransPos1.v - cameraPos, cameraDir).m128_f32[0];
+	float transDist2 = XMVector3Dot(TransPos2.v - cameraPos, cameraDir).m128_f32[0];
+
+	if (transDist1 < transDist2)
+	{
+		// Second transparent quad
+		{
+			ID3D11Buffer* constBuffers[] = { m_pModelBuffer4 };
+			m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
+			m_pContext->PSSetConstantBuffers(0, 1, constBuffers);
+
+			m_pContext->DrawIndexed(6, 0, 0);
+		}
+		// First transparent quad
+		{
+			ID3D11Buffer* constBuffers[] = { m_pModelBuffer3 };
+			m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
+			m_pContext->PSSetConstantBuffers(0, 1, constBuffers);
+
+			m_pContext->DrawIndexed(6, 0, 0);
+		}
+	}
+	else
+	{
+		// First transparent quad
+		{
+			ID3D11Buffer* constBuffers[] = { m_pModelBuffer3 };
+			m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
+			m_pContext->PSSetConstantBuffers(0, 1, constBuffers);
+
+			m_pContext->DrawIndexed(6, 0, 0);
+		}
+		// Second transparent quad
+		{
+			ID3D11Buffer* constBuffers[] = { m_pModelBuffer4 };
+			m_pContext->VSSetConstantBuffers(0, 1, constBuffers);
+			m_pContext->PSSetConstantBuffers(0, 1, constBuffers);
+
+			m_pContext->DrawIndexed(6, 0, 0);
+		}
 	}
 }
 

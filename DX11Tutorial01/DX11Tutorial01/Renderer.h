@@ -19,12 +19,16 @@ public:
 	void MouseMove(int dx, int dy);
 	void MouseWheel(int dz);
 
+	void SwitchNormalMode();
+
 private:
 	HRESULT SetupBackBuffer();
 
+	HRESULT CreateTransparentObjects();
 	HRESULT CreateScene();
 	void DestroyScene();
 	void RenderScene();
+	void RenderSceneTransparent();
 
 	ID3D11VertexShader* CreateVertexShader(LPCTSTR shaderSource, ID3DBlob** ppBlob);
 	ID3D11PixelShader*  CreatePixelShader(LPCTSTR shaderSource);
@@ -48,20 +52,27 @@ private:
 	ID3D11Resource* m_pTexture;
 	ID3D11ShaderResourceView* m_pTextureSRV;
 
+	ID3D11Resource* m_pTextureNM;
+	ID3D11ShaderResourceView* m_pTextureNMSRV;
+
 	ID3D11SamplerState* m_pSamplerState;
 
 	ID3D11Buffer* m_pModelBuffer;
 	ID3D11Buffer* m_pModelBuffer2;
-	ID3D11Buffer* m_pPostProcBuffer;
 	ID3D11Buffer* m_pSceneBuffer;
 
-	ID3D11RasterizerState* m_pRasterizerState;
+	ID3D11Buffer* m_pModelBuffer3;
+	ID3D11Buffer* m_pModelBuffer4;
+	ID3D11Buffer* m_pTransVertexBuffer;
+	ID3D11Buffer* m_pTransIndexBuffer;
+	ID3D11VertexShader* m_pTransVertexShader;
+	ID3D11PixelShader* m_pTransPixelShader;
+	ID3D11InputLayout* m_pTransInputLayout;
+	ID3D11RasterizerState* m_pTransRasterizerState;
+	ID3D11BlendState* m_pTransBlendState;
+	ID3D11DepthStencilState* m_pTransDepthState;
 
-	ID3D11Texture2D* m_pRenderTarget;
-	ID3D11RenderTargetView* m_pRenderTargetRTV;
-	ID3D11ShaderResourceView* m_pRenderTargetSRV;
-	ID3D11Buffer* m_pScreenVertexBuffer;
-	ID3D11Buffer* m_pScreenIndexBuffer;
+	ID3D11RasterizerState* m_pRasterizerState;
 
 	UINT m_width;
 	UINT m_height;
@@ -71,4 +82,6 @@ private:
 	float m_lon;
 	float m_lat;
 	float m_dist;
+
+	int m_mode;
 };
